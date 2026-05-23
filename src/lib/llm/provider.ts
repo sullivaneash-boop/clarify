@@ -5,6 +5,8 @@ import type {
   ProposeNextQuestionOutput,
   SummarizeReadinessInput,
   SummarizeReadinessOutput,
+  OrchestrateInterviewTurnInput,
+  OrchestrateInterviewTurnOutput,
 } from './schemas';
 
 export type LLMProvider = {
@@ -12,4 +14,5 @@ export type LLMProvider = {
   extractSpecUpdates(input: ExtractSpecUpdatesInput): Promise<ExtractSpecUpdatesOutput>;
   proposeNextQuestion(input: ProposeNextQuestionInput): Promise<ProposeNextQuestionOutput>;
   summarizeReadiness(input: SummarizeReadinessInput): Promise<SummarizeReadinessOutput>;
+  orchestrateInterviewTurn?(input: OrchestrateInterviewTurnInput): Promise<OrchestrateInterviewTurnOutput>;
 };

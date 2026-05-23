@@ -24,6 +24,11 @@ async function runLocalStubInterviewTurn(request: InterviewTurnRequest): Promise
     currentSpec: request.currentSpec,
     recentMessages: request.recentMessages,
     turnCount: request.turnCount,
+    currentPhase: request.currentPhase,
+    conversationSummary: request.conversationSummary,
+    questionHistory: request.questionHistory,
+    selectedBuildMode: request.selectedBuildMode,
+    artifactGoal: request.artifactGoal,
     provider: stubProvider,
   });
 }

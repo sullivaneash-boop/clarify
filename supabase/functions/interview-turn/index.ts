@@ -3,411 +3,60 @@ import { corsHeaders, jsonResponse } from '../_shared/cors.ts';
 import { callDeepSeekJson } from '../_shared/deepseek.ts';
 import { callGeminiJson } from '../_shared/gemini.ts';
 import {
-  buildTypeSchema,
   buildSpecSchema,
+  buildTypeSchema,
+  interviewContextPacketSchema,
   interviewTurnRequestSchema,
   interviewTurnResponseSchema,
-  nextQuestionResponseSchema,
+  orchestratedInterviewTurnSchema,
   outputTypeSchema,
-  readinessSummaryResponseSchema,
   specPatchSchema,
+  type ArtifactGoal,
   type BuildSpec,
+  type CandidateGap,
   type FieldSource,
+  type InterviewContextPacket,
   type InterviewMessage,
-  type NextQuestionResponse,
+  type OrchestratedInterviewTurn,
+  type QuestionHistoryItem,
   type ReadinessAssessment,
-  type ReadinessSummaryResponse,
+  type SelectedBuildMode,
   type SpecPatch,
   type SpecPatchOperation,
 } from '../_shared/validation.ts';
 
-type Provider = {
-  name: string;
-  extractSpecUpdates(input: {
-    currentSpec: BuildSpec;
-    latestUserMessage: string;
-    recentMessages: InterviewMessage[];
-  }): Promise<SpecPatch>;
-  proposeNextQuestion(input: {
-    currentSpec: BuildSpec;
-    readiness: ReadinessAssessment;
-    missingFields: string[];
-    openQuestions: string[];
-    recentMessages: InterviewMessage[];
-  }): Promise<NextQuestionResponse>;
-  summarizeReadiness(input: {
-    currentSpec: BuildSpec;
-    readiness: ReadinessAssessment;
-    assumptions: string[];
-  }): Promise<ReadinessSummaryResponse>;
+type OrchestrateInterviewTurnInput = {
+  sessionId: string;
+  latestUserMessage: string;
+  currentSpec: BuildSpec;
+  currentPhase: string;
+  recentMessages: InterviewMessage[];
+  conversationSummary: string;
+  questionHistory: QuestionHistoryItem[];
+  assumptions: NonNullable<BuildSpec['assumptionLedger']>;
+  unresolvedConflicts: NonNullable<BuildSpec['conflicts']>;
+  selectedBuildMode: SelectedBuildMode;
+  artifactGoal: ArtifactGoal;
 };
 
-function includesAny(text: string, terms: string[]) {
-  return terms.some((term) => text.includes(term));
-}
+type Provider = {
+  name: string;
+  orchestrateInterviewTurn(input: OrchestrateInterviewTurnInput): Promise<OrchestratedInterviewTurn>;
+};
 
-function op(
-  operation: SpecPatchOperation['op'],
-  path: string,
-  value: unknown,
-  confidence = 0.75,
-): SpecPatchOperation {
-  return { op: operation, path, value, confidence };
-}
+type DomainPackId = 'website' | 'web_app' | 'client_portal' | 'internal_tool' | 'automation' | 'spreadsheet' | 'unknown';
 
-class StubProvider implements Provider {
-  name = 'stub';
-
-  async extractSpecUpdates(input: {
-    currentSpec: BuildSpec;
-    latestUserMessage: string;
-  }): Promise<SpecPatch> {
-    const text = input.latestUserMessage.toLowerCase();
-    const operations: SpecPatchOperation[] = [];
-
-    if (includesAny(text, ['client portal', 'customer portal', 'portal'])) {
-      operations.push(op('set', '/buildType', 'client_portal', 0.86));
-    } else if (includesAny(text, ['spreadsheet', 'sheet', 'excel'])) {
-      operations.push(op('set', '/buildType', 'spreadsheet', 0.82));
-    } else if (includesAny(text, ['automation', 'workflow', 'automate'])) {
-      operations.push(op('set', '/buildType', 'automation', 0.82));
-    } else if (includesAny(text, ['website', 'landing page', 'site'])) {
-      operations.push(op('set', '/buildType', 'website', 0.78));
-    } else if (includesAny(text, ['dashboard', 'internal tool', 'business system'])) {
-      operations.push(op('set', '/buildType', 'business_system', 0.78));
-    }
-
-    if (includesAny(text, ['customer', 'client'])) {
-      operations.push(op('set', '/primaryUser', 'Customers/clients', 0.8));
-    } else if (includesAny(text, ['team', 'internal', 'employee', 'staff'])) {
-      operations.push(op('set', '/primaryUser', 'Internal team', 0.8));
-    }
-
-    if (text.includes('detailing')) {
-      operations.push(op('set', '/businessType', 'detailing business', 0.76));
-    }
-
-    if (includesAny(text, ['request services', 'request service', 'service requests'])) {
-      operations.push(op('set', '/mainGoal', 'Let customers request services clearly.', 0.78));
-      operations.push(op('append', '/coreFeatures', ['Service request flow'], 0.72));
-    } else if (includesAny(text, ['book', 'booking', 'appointment'])) {
-      operations.push(op('set', '/mainGoal', 'Turn interest into booked appointments.', 0.76));
-      operations.push(op('append', '/coreFeatures', ['Booking flow'], 0.72));
-    } else if (includesAny(text, ['track', 'manage', 'dashboard'])) {
-      operations.push(op('set', '/mainGoal', 'Help the team track work clearly.', 0.72));
-    }
-
-    if (includesAny(text, ['prototype', 'working prototype'])) {
-      operations.push(op('set', '/outputType', 'prototype', 0.84));
-    } else if (includesAny(text, ['build prompt', 'prompt'])) {
-      operations.push(op('set', '/outputType', 'build_prompt', 0.84));
-    } else if (includesAny(text, ['implementation plan', 'plan'])) {
-      operations.push(op('set', '/outputType', 'implementation_plan', 0.8));
-    }
-
-    return {
-      operations,
-      summary: operations.length > 0 ? 'Stub extracted obvious supported fields.' : 'Stub found no obvious supported fields.',
-    };
-  }
-
-  async proposeNextQuestion(input: {
-    missingFields: string[];
-    openQuestions: string[];
-  }): Promise<NextQuestionResponse> {
-    const missing = input.missingFields[0];
-    if (missing === 'buildType') {
-      return {
-        question:
-          'What kind of thing are you trying to build: a website, internal system, spreadsheet, automation, client portal, or something else?',
-      };
-    }
-    if (missing === 'primaryUser') {
-      return { question: 'Who will use this most: you, your team, customers, clients, or someone else?' };
-    }
-    if (missing === 'mainGoal') {
-      return { question: 'What is the main outcome this needs to create?' };
-    }
-    if (missing === 'outputType') {
-      return {
-        question:
-          'What do you want at the end: a build prompt, implementation plan, prototype, spreadsheet plan, or code files?',
-      };
-    }
-    return { question: input.openQuestions[0] ?? 'What decision would most change the first version?' };
-  }
-
-  async summarizeReadiness(input: {
-    currentSpec: BuildSpec;
-    assumptions: string[];
-  }): Promise<ReadinessSummaryResponse> {
-    return {
-      summary: `Here is the build plan: a ${input.currentSpec.buildType.replace(/_/g, ' ')} for ${
-        input.currentSpec.primaryUser ?? 'the primary user'
-      } that helps with ${input.currentSpec.mainGoal ?? 'the main outcome'}. Assumptions: ${
-        input.assumptions.length > 0 ? input.assumptions.join(', ') : 'none beyond the current spec'
-      }. This first pass should avoid paid services, secrets, and production integrations unless explicitly added later.`,
-    };
-  }
-}
-
-function promptHeader() {
-  return `Clarify is an interview-first build planning tool.
-The deterministic app owns state, readiness, stopping rules, and spec merging.
-The model only helps with language tasks.
-Never invent facts.
-Never decide app flow.
-Return JSON only.`;
-}
-
-function llmExtractPrompt(input: {
-  currentSpec: BuildSpec;
-  latestUserMessage: string;
-  recentMessages: InterviewMessage[];
-}) {
-  return `${promptHeader()}
-
-Return a SpecPatch only:
-{"operations":[{"op":"set|append|remove|replace","path":"/fieldName","value":"...","confidence":0.8}],"summary":"short summary"}
-
-Rules:
-- Only include updates clearly supported by the user's answer.
-- Never invent values.
-- Do not overwrite existing fields unless the user explicitly corrects them.
-- Use confidence between 0 and 1.
-- For "/buildType", value must be one of: "business_system", "website", "spreadsheet", "automation", "client_portal", "landing_page", "unknown".
-- For "/outputType", value must be one of: "implementation_plan", "build_prompt", "prototype", "spreadsheet", "code_files".
-- Do not put product categories like "client portal" or "internal dashboard" in "/outputType"; those belong in "/buildType" if clearly supported.
-
-Current spec:
-${JSON.stringify(input.currentSpec, null, 2)}
-
-Recent messages:
-${JSON.stringify(input.recentMessages.slice(-6), null, 2)}
-
-Latest user message:
-${input.latestUserMessage}`;
-}
-
-function llmQuestionPrompt(input: {
-  currentSpec: BuildSpec;
-  readiness: ReadinessAssessment;
-  missingFields: string[];
-  openQuestions: string[];
-  recentMessages: InterviewMessage[];
-}) {
-  return `${promptHeader()}
-
-Return one next question:
-{"question":"one plain-English question","rationale":"optional short rationale or null"}
-
-Rules:
-- Ask one question only.
-- Ask the question that most changes the build.
-- Explain why only when useful.
-- No jargon.
-- No fake enthusiasm.
-- No "great idea!"
-- Do not ask for trivia.
-
-Current spec:
-${JSON.stringify(input.currentSpec, null, 2)}
-
-Readiness:
-${JSON.stringify(input.readiness, null, 2)}
-
-Missing fields:
-${JSON.stringify(input.missingFields)}
-
-Open questions:
-${JSON.stringify(input.openQuestions)}
-
-Recent messages:
-${JSON.stringify(input.recentMessages.slice(-6), null, 2)}`;
-}
-
-function llmSummaryPrompt(input: {
-  currentSpec: BuildSpec;
-  readiness: ReadinessAssessment;
-  assumptions: string[];
-}) {
-  return `${promptHeader()}
-
-Return a concise confirmation summary:
-{"summary":"plain English summary"}
-
-Rules:
-- Include what will be built.
-- Include what will not be included yet.
-- Include assumptions.
-- Include tradeoffs.
-- Do not oversell.
-
-Current spec:
-${JSON.stringify(input.currentSpec, null, 2)}
-
-Readiness:
-${JSON.stringify(input.readiness, null, 2)}
-
-Assumptions:
-${JSON.stringify(input.assumptions)}`;
-}
-
-class GeminiProvider implements Provider {
-  name = 'gemini';
-  private apiKey: string;
-  private model: string;
-
-  constructor(apiKey: string, model: string) {
-    if (!apiKey) throw new Error('GEMINI_API_KEY is required when LLM_PROVIDER=gemini.');
-    this.apiKey = apiKey;
-    this.model = model;
-  }
-
-  async extractSpecUpdates(input: {
-    currentSpec: BuildSpec;
-    latestUserMessage: string;
-    recentMessages: InterviewMessage[];
-  }): Promise<SpecPatch> {
-    return callGeminiJson({
-      apiKey: this.apiKey,
-      model: this.model,
-      prompt: llmExtractPrompt(input),
-      schema: specPatchSchema,
-      operationName: 'extractSpecUpdates',
-    });
-  }
-
-  async proposeNextQuestion(input: {
-    currentSpec: BuildSpec;
-    readiness: ReadinessAssessment;
-    missingFields: string[];
-    openQuestions: string[];
-    recentMessages: InterviewMessage[];
-  }): Promise<NextQuestionResponse> {
-    return callGeminiJson({
-      apiKey: this.apiKey,
-      model: this.model,
-      prompt: llmQuestionPrompt(input),
-      schema: nextQuestionResponseSchema,
-      operationName: 'proposeNextQuestion',
-    });
-  }
-
-  async summarizeReadiness(input: {
-    currentSpec: BuildSpec;
-    readiness: ReadinessAssessment;
-    assumptions: string[];
-  }): Promise<ReadinessSummaryResponse> {
-    return callGeminiJson({
-      apiKey: this.apiKey,
-      model: this.model,
-      prompt: llmSummaryPrompt(input),
-      schema: readinessSummaryResponseSchema,
-      operationName: 'summarizeReadiness',
-    });
-  }
-}
-
-class DeepSeekProvider implements Provider {
-  name = 'deepseek';
-  private apiKey: string;
-  private model: string;
-
-  constructor(apiKey: string, model: string) {
-    if (!apiKey) throw new Error('DEEPSEEK_API_KEY is required when LLM_PROVIDER=deepseek.');
-    this.apiKey = apiKey;
-    this.model = model;
-  }
-
-  async extractSpecUpdates(input: {
-    currentSpec: BuildSpec;
-    latestUserMessage: string;
-    recentMessages: InterviewMessage[];
-  }): Promise<SpecPatch> {
-    return callDeepSeekJson({
-      apiKey: this.apiKey,
-      model: this.model,
-      prompt: llmExtractPrompt(input),
-      schema: specPatchSchema,
-      operationName: 'extractSpecUpdates',
-    });
-  }
-
-  async proposeNextQuestion(input: {
-    currentSpec: BuildSpec;
-    readiness: ReadinessAssessment;
-    missingFields: string[];
-    openQuestions: string[];
-    recentMessages: InterviewMessage[];
-  }): Promise<NextQuestionResponse> {
-    return callDeepSeekJson({
-      apiKey: this.apiKey,
-      model: this.model,
-      prompt: llmQuestionPrompt(input),
-      schema: nextQuestionResponseSchema,
-      operationName: 'proposeNextQuestion',
-    });
-  }
-
-  async summarizeReadiness(input: {
-    currentSpec: BuildSpec;
-    readiness: ReadinessAssessment;
-    assumptions: string[];
-  }): Promise<ReadinessSummaryResponse> {
-    return callDeepSeekJson({
-      apiKey: this.apiKey,
-      model: this.model,
-      prompt: llmSummaryPrompt(input),
-      schema: readinessSummaryResponseSchema,
-      operationName: 'summarizeReadiness',
-    });
-  }
-}
-
-function resolveProvider(): Provider {
-  const providerName = Deno.env.get('LLM_PROVIDER') ?? 'stub';
-  if (providerName === 'deepseek') {
-    return new DeepSeekProvider(
-      Deno.env.get('DEEPSEEK_API_KEY') ?? '',
-      Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-v4-flash',
-    );
-  }
-  if (providerName === 'gemini') {
-    return new GeminiProvider(
-      Deno.env.get('GEMINI_API_KEY') ?? '',
-      Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash',
-    );
-  }
-  return new StubProvider();
-}
-
-function normalizeListValue(value: unknown) {
-  if (Array.isArray(value)) return value.map(String).filter(Boolean);
-  if (value === null || value === undefined || value === '') return [];
-  return [String(value)];
-}
-
-function inferBuildTypeFromText(text: string): BuildSpec['buildType'] | undefined {
-  if (text.includes('portal')) return 'client_portal';
-  if (text.includes('spreadsheet') || text.includes('sheet') || text.includes('excel')) return 'spreadsheet';
-  if (text.includes('automation') || text.includes('workflow')) return 'automation';
-  if (text.includes('landing')) return 'landing_page';
-  if (text.includes('website') || text.includes('site')) return 'website';
-  if (text.includes('dashboard') || text.includes('internal') || text.includes('system') || text.includes('app')) {
-    return 'business_system';
-  }
-  return undefined;
-}
-
-function inferOutputTypeFromText(text: string): BuildSpec['outputType'] | undefined {
-  if (text.includes('prototype')) return 'prototype';
-  if (text.includes('prompt')) return 'build_prompt';
-  if (text.includes('spreadsheet')) return 'spreadsheet';
-  if (text.includes('code')) return 'code_files';
-  if (text.includes('package') || text.includes('plan')) return 'implementation_plan';
-  return undefined;
-}
+const requiredFields = ['buildType', 'primaryUser', 'mainGoal', 'outputType'] as const;
+const arrayPaths = new Set([
+  '/coreFeatures',
+  '/dataToTrack',
+  '/userRoles',
+  '/integrations',
+  '/designPreferences',
+  '/technicalConstraints',
+  '/mustNotDo',
+  '/assumptions',
+]);
 
 const sourceAuthority: Record<FieldSource, number> = {
   system_default: 1,
@@ -417,28 +66,230 @@ const sourceAuthority: Record<FieldSource, number> = {
   user_confirmed: 5,
 };
 
-function sameValue(a: unknown, b: unknown) {
-  return JSON.stringify(a) === JSON.stringify(b);
+const domainPacks: Record<DomainPackId, {
+  id: DomainPackId;
+  label: string;
+  criticalFields: string[];
+  usefulFields: string[];
+  artifactRequirements: string[];
+}> = {
+  website: {
+    id: 'website',
+    label: 'Website',
+    criticalFields: ['/buildType', '/primaryUser', '/mainGoal', '/outputType'],
+    usefulFields: ['/coreFeatures', '/designPreferences'],
+    artifactRequirements: ['page structure', 'conversion goal', 'copy/content needs'],
+  },
+  web_app: {
+    id: 'web_app',
+    label: 'Web app',
+    criticalFields: ['/buildType', '/primaryUser', '/mainGoal', '/dataToTrack', '/outputType'],
+    usefulFields: ['/userRoles', '/integrations', '/coreFeatures'],
+    artifactRequirements: ['core workflow', 'data model', 'roles', 'edge cases'],
+  },
+  client_portal: {
+    id: 'client_portal',
+    label: 'Client portal',
+    criticalFields: ['/buildType', '/primaryUser', '/mainGoal', '/userRoles', '/outputType'],
+    usefulFields: ['/dataToTrack', '/integrations', '/mustNotDo'],
+    artifactRequirements: ['visibility model', 'client data', 'auth/roles', 'invite flow'],
+  },
+  internal_tool: {
+    id: 'internal_tool',
+    label: 'Internal tool',
+    criticalFields: ['/buildType', '/primaryUser', '/mainGoal', '/dataToTrack', '/outputType'],
+    usefulFields: ['/userRoles', '/coreFeatures', '/integrations'],
+    artifactRequirements: ['operator workflow', 'data model', 'permissions', 'failure states'],
+  },
+  automation: {
+    id: 'automation',
+    label: 'Automation',
+    criticalFields: ['/buildType', '/primaryUser', '/mainGoal', '/integrations', '/outputType'],
+    usefulFields: ['/mustNotDo', '/dataToTrack', '/technicalConstraints'],
+    artifactRequirements: ['trigger', 'inputs', 'actions', 'human review', 'failure handling'],
+  },
+  spreadsheet: {
+    id: 'spreadsheet',
+    label: 'Spreadsheet',
+    criticalFields: ['/buildType', '/primaryUser', '/mainGoal', '/dataToTrack', '/outputType'],
+    usefulFields: ['/coreFeatures', '/technicalConstraints'],
+    artifactRequirements: ['tabs', 'inputs', 'formulas', 'review/export flow'],
+  },
+  unknown: {
+    id: 'unknown',
+    label: 'Unknown',
+    criticalFields: ['/buildType', '/primaryUser', '/mainGoal', '/outputType'],
+    usefulFields: ['/coreFeatures', '/dataToTrack'],
+    artifactRequirements: ['identified build type', 'target user', 'goal', 'artifact goal'],
+  },
+};
+
+function includesAny(text: string, terms: string[]) {
+  return terms.some((term) => text.includes(term));
 }
 
-function hasValue(value: unknown) {
-  if (Array.isArray(value)) return value.length > 0;
-  return value !== null && value !== undefined && value !== '';
+function operation(op: SpecPatchOperation['op'], path: string, value: unknown, confidence = 0.75): SpecPatchOperation {
+  return { op, path, value, confidence, evidence: [String(value)], sourceMessageId: 'stub' };
+}
+
+function inferDomainPack(spec: BuildSpec) {
+  if (spec.buildType === 'website' || spec.buildType === 'landing_page') return domainPacks.website;
+  if (spec.buildType === 'client_portal') return domainPacks.client_portal;
+  if (spec.buildType === 'automation') return domainPacks.automation;
+  if (spec.buildType === 'spreadsheet') return domainPacks.spreadsheet;
+  if (spec.buildType === 'business_system') return domainPacks.internal_tool;
+  if (spec.coreFeatures.some((item) => /app|login|workflow|dashboard/i.test(item))) return domainPacks.web_app;
+  return domainPacks.unknown;
+}
+
+function hasRequired(spec: BuildSpec, field: (typeof requiredFields)[number]) {
+  if (field === 'buildType') return spec.buildType !== 'unknown';
+  if (field === 'outputType') return Boolean(spec.outputType);
+  return Boolean(spec[field] && String(spec[field]).trim().length > 0);
+}
+
+function pathMissing(spec: BuildSpec, path: string) {
+  if (path === '/buildType') return spec.buildType === 'unknown';
+  if (path === '/outputType') return !spec.outputType;
+  const value = spec[path.slice(1) as keyof BuildSpec];
+  if (Array.isArray(value)) return value.length === 0;
+  return value === null || value === undefined || value === '';
+}
+
+function questionForPath(path: string) {
+  if (path === '/buildType') return 'What kind of thing are we building: website, web app, client portal, internal tool, automation, spreadsheet, or something else?';
+  if (path === '/primaryUser') return 'Who will use this most, and what job are they trying to get done?';
+  if (path === '/mainGoal') return 'What is the main outcome this needs to create?';
+  if (path === '/outputType') return 'What should Clarify produce at the end: an implementation plan, build prompt, prototype, spreadsheet plan, or code files?';
+  if (path === '/dataToTrack') return 'What data does this need to create, show, update, or export?';
+  if (path === '/userRoles') return 'Does everyone see the same thing, or are there different roles and permissions?';
+  if (path === '/integrations') return 'What outside systems does this need to read from or update, if any?';
+  if (path === '/mustNotDo') return 'What should this never do without a human review step?';
+  return 'What decision would most change the first version?';
+}
+
+function categoryForPath(path: string): CandidateGap['category'] {
+  if (path === '/outputType') return 'output_type';
+  if (path === '/integrations') return 'integrations';
+  if (path === '/dataToTrack') return 'data';
+  if (path === '/userRoles') return 'auth';
+  if (path === '/mustNotDo') return 'failure_behavior';
+  if (path === '/coreFeatures') return 'workflow';
+  return 'architecture';
+}
+
+function scoreCandidateGap(gap: CandidateGap) {
+  const categoryBoost: Record<CandidateGap['category'], number> = {
+    architecture: 8,
+    auth: 8,
+    data: 7,
+    integrations: 7,
+    workflow: 7,
+    failure_behavior: 6,
+    output_type: 8,
+    scope: 4,
+    cosmetic: -6,
+  };
+  return (
+    gap.impactOnBuild * 3 +
+    gap.riskIfWrong * 3 +
+    gap.dependencyUnlockValue * 2 +
+    gap.userUncertainty -
+    gap.questionAnnoyance * 2 -
+    (gap.canUseSafeDefault ? 3 : 0) +
+    categoryBoost[gap.category]
+  );
+}
+
+function buildCandidateGaps(spec: BuildSpec, questionHistory: QuestionHistoryItem[]) {
+  const pack = inferDomainPack(spec);
+  const paths = Array.from(new Set([...pack.criticalFields, ...pack.usefulFields]));
+  const askedTargets = new Set(questionHistory.map((item) => item.targetField));
+
+  return paths
+    .filter((path) => pathMissing(spec, path) && !askedTargets.has(path))
+    .map((path) => {
+      const gap: CandidateGap = {
+        id: `${pack.id}:${path}`,
+        path,
+        question: questionForPath(path),
+        category: categoryForPath(path),
+        impactOnBuild: path === '/outputType' || path === '/dataToTrack' || path === '/userRoles' ? 5 : 4,
+        riskIfWrong: path === '/integrations' || path === '/dataToTrack' || path === '/userRoles' ? 5 : 4,
+        dependencyUnlockValue: path === '/buildType' || path === '/outputType' ? 5 : 3,
+        userUncertainty: 3,
+        canUseSafeDefault: !['/buildType', '/mainGoal', '/outputType'].includes(path),
+        questionAnnoyance: path === '/designPreferences' ? 5 : 2,
+      };
+      return { ...gap, score: scoreCandidateGap(gap) };
+    })
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+}
+
+function inferSkillLevel(messages: InterviewMessage[]): InterviewContextPacket['inferredUserSkillLevel'] {
+  const text = messages.map((message) => message.content).join(' ').toLowerCase();
+  if (/\b(api|schema|database|typescript|react|auth|webhook|endpoint|repo)\b/.test(text)) return 'technical';
+  if (/\bnot technical|non technical|plain english|i don't code|no code\b/.test(text)) return 'nontechnical';
+  if (text.trim().length > 0) return 'mixed';
+  return 'unknown';
+}
+
+function markQuestionHistoryAnswered(history: QuestionHistoryItem[], latestUserMessage: string) {
+  if (!latestUserMessage.trim()) return history;
+  let lastUnansweredIndex = -1;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    if (!history[index].answered) {
+      lastUnansweredIndex = index;
+      break;
+    }
+  }
+  if (lastUnansweredIndex === -1) return history;
+  return history.map((item, index) => (index === lastUnansweredIndex ? { ...item, answered: true } : item));
+}
+
+function createQuestionHistoryItem(question: NonNullable<OrchestratedInterviewTurn['nextQuestion']>): QuestionHistoryItem {
+  return {
+    id: `question_${crypto.randomUUID()}`,
+    question: question.question,
+    targetField: question.targetField,
+    reason: question.reason,
+    createdAt: new Date().toISOString(),
+    answered: false,
+  };
+}
+
+function normalizeListValue(value: unknown) {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (value === null || value === undefined || value === '') return [];
+  return [String(value)];
+}
+
+function inferBuildTypeFromText(value: unknown): BuildSpec['buildType'] | undefined {
+  const text = String(value).toLowerCase();
+  if (text.includes('portal')) return 'client_portal';
+  if (text.includes('spreadsheet') || text.includes('sheet') || text.includes('excel')) return 'spreadsheet';
+  if (text.includes('automation') || text.includes('workflow')) return 'automation';
+  if (text.includes('landing')) return 'landing_page';
+  if (text.includes('website') || text.includes('site')) return 'website';
+  if (text.includes('dashboard') || text.includes('internal') || text.includes('system') || text.includes('app')) return 'business_system';
+  return undefined;
+}
+
+function inferOutputTypeFromText(value: unknown): BuildSpec['outputType'] | undefined {
+  const text = String(value).toLowerCase();
+  if (text.includes('prototype')) return 'prototype';
+  if (text.includes('prompt')) return 'build_prompt';
+  if (text.includes('spreadsheet')) return 'spreadsheet';
+  if (text.includes('code')) return 'code_files';
+  if (text.includes('package') || text.includes('plan')) return 'implementation_plan';
+  return undefined;
 }
 
 function normalizeEnumField(key: keyof BuildSpec, value: unknown) {
-  if (value === null || value === undefined || value === '') {
-    return key === 'outputType' ? null : value;
-  }
-
+  if (value === null || value === undefined || value === '') return key === 'outputType' ? null : value;
   if (key !== 'buildType' && key !== 'outputType') return value;
 
-  const normalized = String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[-\s/]+/g, '_');
-  const text = String(value).trim().toLowerCase();
-
+  const normalized = String(value).trim().toLowerCase().replace(/[-\s/]+/g, '_');
   if (key === 'buildType') {
     const aliases: Record<string, BuildSpec['buildType']> = {
       app: 'business_system',
@@ -457,7 +308,7 @@ function normalizeEnumField(key: keyof BuildSpec, value: unknown) {
     };
     const candidate = aliases[normalized] ?? normalized;
     const parsed = buildTypeSchema.safeParse(candidate);
-    return parsed.success ? parsed.data : inferBuildTypeFromText(text);
+    return parsed.success ? parsed.data : inferBuildTypeFromText(value);
   }
 
   const aliases: Record<string, BuildSpec['outputType']> = {
@@ -476,11 +327,20 @@ function normalizeEnumField(key: keyof BuildSpec, value: unknown) {
   };
   const candidate = aliases[normalized] ?? normalized;
   const parsed = outputTypeSchema.safeParse(candidate);
-  return parsed.success ? parsed.data : inferOutputTypeFromText(text);
+  return parsed.success ? parsed.data : inferOutputTypeFromText(value);
+}
+
+function sameValue(a: unknown, b: unknown) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function hasValue(value: unknown) {
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== null && value !== undefined && value !== '';
 }
 
 function applySpecPatch(currentSpec: BuildSpec, patch: SpecPatch) {
-  const next: BuildSpec = {
+  const next = buildSpecSchema.parse({
     ...currentSpec,
     coreFeatures: [...currentSpec.coreFeatures],
     dataToTrack: [...currentSpec.dataToTrack],
@@ -495,35 +355,28 @@ function applySpecPatch(currentSpec: BuildSpec, patch: SpecPatch) {
     fieldMetadata: { ...(currentSpec.fieldMetadata ?? {}) },
     conflicts: [...(currentSpec.conflicts ?? [])],
     assumptionLedger: [...(currentSpec.assumptionLedger ?? [])],
-  };
+  });
 
-  for (const operation of patch.operations) {
-    const key = operation.path.replace(/^\//, '') as keyof BuildSpec;
+  for (const patchOperation of patch.operations) {
+    const key = patchOperation.path.replace(/^\//, '') as keyof BuildSpec;
     if (!(key in next)) continue;
+    const path = patchOperation.path;
     const previous = next[key];
-    const source: FieldSource = 'model_inferred';
-    const path = operation.path;
 
-    if (operation.op === 'append') {
+    if (arrayPaths.has(path)) {
       if (!Array.isArray(previous)) continue;
+      const removeValues = new Set(normalizeListValue(patchOperation.value).map((item) => item.toLowerCase()));
       const seen = new Set(previous.map((item) => String(item).toLowerCase()));
-      const incoming = normalizeListValue(operation.value).filter((item) => !seen.has(item.toLowerCase()));
-      (next[key] as string[]) = [...previous, ...incoming];
+      const incoming = normalizeListValue(patchOperation.value).filter((item) => !seen.has(item.toLowerCase()));
+      (next[key] as string[]) = patchOperation.op === 'remove'
+        ? previous.filter((item) => !removeValues.has(String(item).toLowerCase()))
+        : [...previous, ...incoming];
       continue;
     }
 
-    if (operation.op === 'remove') {
-      if (Array.isArray(previous)) {
-        const removeValues = new Set(normalizeListValue(operation.value).map((item) => item.toLowerCase()));
-        (next[key] as string[]) = previous.filter((item) => !removeValues.has(String(item).toLowerCase()));
-      } else {
-        (next[key] as null) = null;
-      }
-      continue;
-    }
-
-    const normalizedValue = normalizeEnumField(key, operation.value);
+    const normalizedValue = normalizeEnumField(key, patchOperation.value);
     if (normalizedValue === undefined) continue;
+    const source: FieldSource = 'model_inferred';
     const metadata = next.fieldMetadata?.[path];
     const previousSource = metadata?.source ?? (hasValue(previous) ? 'system_default' : source);
 
@@ -531,14 +384,14 @@ function applySpecPatch(currentSpec: BuildSpec, patch: SpecPatch) {
       next.conflicts = [
         ...(next.conflicts ?? []),
         {
-          id: `conflict_${operation.sourceMessageId ?? Date.now()}_${String(key)}`,
+          id: `conflict_${patchOperation.sourceMessageId ?? Date.now()}_${String(key)}`,
           path,
           existingValue: previous,
           incomingValue: normalizedValue,
           existingSource: previousSource,
           incomingSource: source,
-          evidence: operation.evidence ?? [],
-          sourceMessageId: operation.sourceMessageId,
+          evidence: patchOperation.evidence ?? [],
+          sourceMessageId: patchOperation.sourceMessageId,
           status: 'unresolved',
           createdAt: new Date().toISOString(),
         },
@@ -546,15 +399,17 @@ function applySpecPatch(currentSpec: BuildSpec, patch: SpecPatch) {
       continue;
     }
 
-    if (operation.op === 'replace' || previous === null || previous === undefined || operation.confidence >= 0.82) {
+    if (patchOperation.op === 'remove') {
+      (next[key] as null) = null;
+    } else if (patchOperation.op === 'replace' || !hasValue(previous) || patchOperation.confidence >= 0.82) {
       (next[key] as typeof normalizedValue) = normalizedValue;
       next.fieldMetadata = {
         ...(next.fieldMetadata ?? {}),
         [path]: {
           source,
-          confidence: operation.confidence,
-          evidence: operation.evidence ?? [],
-          sourceMessageId: operation.sourceMessageId,
+          confidence: patchOperation.confidence,
+          evidence: patchOperation.evidence ?? [],
+          sourceMessageId: patchOperation.sourceMessageId,
           updatedAt: new Date().toISOString(),
         },
       };
@@ -563,26 +418,6 @@ function applySpecPatch(currentSpec: BuildSpec, patch: SpecPatch) {
 
   next.updatedAt = new Date().toISOString();
   return buildSpecSchema.parse(next);
-}
-
-const requiredFields = ['buildType', 'primaryUser', 'mainGoal', 'outputType'] as const;
-
-function hasRequired(spec: BuildSpec, field: (typeof requiredFields)[number]) {
-  if (field === 'buildType') return spec.buildType !== 'unknown';
-  if (field === 'outputType') return Boolean(spec.outputType);
-  return Boolean(spec[field] && String(spec[field]).trim().length > 0);
-}
-
-function questionFor(field: string) {
-  if (field === 'buildType') {
-    return 'What kind of thing are you trying to build: a website, internal system, spreadsheet, automation, client portal, or something else?';
-  }
-  if (field === 'primaryUser') return 'Who will use this most: you, your team, customers, clients, or someone else?';
-  if (field === 'mainGoal') return 'What is the main outcome this needs to create?';
-  if (field === 'outputType') {
-    return 'What do you want at the end: a build prompt, implementation plan, prototype, spreadsheet plan, or code files?';
-  }
-  return 'What decision would most change the first version?';
 }
 
 function assessReadiness(spec: BuildSpec, turnCount: number, maxTurns = 10): ReadinessAssessment {
@@ -601,7 +436,7 @@ function assessReadiness(spec: BuildSpec, turnCount: number, maxTurns = 10): Rea
   const score = Math.min(100, requiredScore + optionalScore);
   const requiredFieldsComplete = missingFields.length === 0;
   const maxTurnsReached = turnCount >= maxTurns;
-  const openQuestions = missingFields.slice(0, 1).map(questionFor);
+  const openQuestions = missingFields.slice(0, 1).map((field) => questionForPath(`/${field}`));
   const blockingOpenQuestions = requiredFieldsComplete ? [] : openQuestions;
   let reason = 'Not enough detail yet.';
 
@@ -610,25 +445,11 @@ function assessReadiness(spec: BuildSpec, turnCount: number, maxTurns = 10): Rea
   } else if (score >= 50) {
     reason = 'The shape is visible, but one required decision still changes the build.';
   }
-
   if (maxTurnsReached && !requiredFieldsComplete) {
     reason = 'Maximum interview turns reached. Move to confirmation with assumptions instead of looping.';
   }
 
-  return {
-    score,
-    requiredFieldsComplete,
-    reason,
-    missingFields,
-    openQuestions,
-    blockingOpenQuestions,
-    maxTurnsReached,
-  };
-}
-
-function canConfirm(readiness: ReadinessAssessment) {
-  if (readiness.maxTurnsReached) return true;
-  return readiness.requiredFieldsComplete && readiness.score >= 75 && readiness.blockingOpenQuestions.length === 0;
+  return { score, requiredFieldsComplete, reason, missingFields, openQuestions, blockingOpenQuestions, maxTurnsReached };
 }
 
 function governorStatus(readiness: ReadinessAssessment, spec: BuildSpec) {
@@ -654,9 +475,88 @@ function governorStatus(readiness: ReadinessAssessment, spec: BuildSpec) {
   };
 }
 
-function formatQuestion(response: NextQuestionResponse) {
-  if (!response.rationale) return response.question;
-  return `${response.question}\n\n${response.rationale}`;
+function canConfirm(readiness: ReadinessAssessment, spec: BuildSpec) {
+  if (readiness.maxTurnsReached) return true;
+  const governed = governorStatus(readiness, spec);
+  return readiness.requiredFieldsComplete && readiness.score >= 75 && governed.hardBlockers.length === 0;
+}
+
+function buildInterviewContextPacket(input: OrchestrateInterviewTurnInput): InterviewContextPacket {
+  const currentSpec = buildSpecSchema.parse({
+    ...input.currentSpec,
+    assumptionLedger: input.currentSpec.assumptionLedger ?? input.assumptions,
+    conflicts: input.currentSpec.conflicts ?? input.unresolvedConflicts,
+  });
+  const simpleReadiness = assessReadiness(
+    currentSpec,
+    input.recentMessages.filter((message) => message.role === 'user').length,
+  );
+  const recentMessages = input.recentMessages.slice(-12);
+
+  return interviewContextPacketSchema.parse({
+    sessionId: input.sessionId,
+    latestUserMessage: input.latestUserMessage,
+    currentSpec,
+    currentPhase: input.currentPhase,
+    recentMessages,
+    conversationSummary: input.conversationSummary,
+    questionHistory: input.questionHistory,
+    unansweredQuestions: input.questionHistory.filter((question) => !question.answered),
+    assumptions: input.assumptions,
+    unresolvedConflicts: input.unresolvedConflicts,
+    selectedBuildMode: input.selectedBuildMode,
+    artifactGoal: input.artifactGoal,
+    inferredUserSkillLevel: inferSkillLevel(recentMessages),
+    readiness: governorStatus(simpleReadiness, currentSpec),
+    candidateGaps: buildCandidateGaps(currentSpec, input.questionHistory),
+  });
+}
+
+function buildOrchestrationPrompt(packet: InterviewContextPacket) {
+  const domainPack = inferDomainPack(packet.currentSpec);
+  return `You are Clarify, an elevated AI product architect.
+
+Core contract:
+- You manage the user-facing conversation and reasoning.
+- The app owns truth, state, validation, persistence, readiness, and final build gating.
+- You propose specPatch operations only. The app may reject, reroute, or hold them for confirmation.
+- Never claim something is final unless validated readiness says it is ready.
+
+Behavior:
+- Reflect what you understood in one specific sentence.
+- If the user asked a question, answer it directly, then bridge back to the best interview question.
+- Ask exactly one strong question when nextMove requires a question.
+- Avoid generic prompts like "tell me more", "what are you trying to build", or "what features do you want".
+- Explain tradeoffs briefly when they affect architecture, auth, data, integrations, workflow, failure behavior, or final output.
+- Avoid cosmetic questions early.
+- Do not sound like a form.
+
+Patch rules:
+- Return operation objects with op, path, value, confidence, evidence, sourceMessageId.
+- Use only paths visible in currentSpec.
+- Only propose values supported by user words or clear context.
+- outputType values: implementation_plan, build_prompt, prototype, spreadsheet, code_files.
+- buildType values: business_system, website, spreadsheet, automation, client_portal, landing_page, unknown.
+
+Build-type pack:
+${JSON.stringify(domainPack, null, 2)}
+
+Context packet:
+${JSON.stringify(packet, null, 2)}
+
+Return JSON only matching this shape:
+{
+  "assistantMessage": "natural, specific response plus one high-leverage question if needed",
+  "detectedUserIntent": "new_build_request|answering_question|asking_meta_question|changing_previous_answer|expressing_confusion|requesting_output|off_topic",
+  "specPatch": {"operations": [{"op":"set|append|remove|replace","path":"/fieldName","value":"...","confidence":0.82,"evidence":["short quote or reason"],"sourceMessageId":"${packet.sessionId}"}], "summary": "what changed"},
+  "nextMove": "ask_question|answer_then_ask|reflect_and_continue|confirm_spec|request_clarification|hold_off_topic",
+  "nextQuestion": {"question":"one question","targetField":"/fieldName","reason":"why this changes the build"} or null,
+  "readiness": ${JSON.stringify(packet.readiness)},
+  "assumptions": ${JSON.stringify(packet.assumptions)},
+  "conflicts": ${JSON.stringify(packet.unresolvedConflicts)},
+  "updatedConversationSummary": "running summary, max 120 words",
+  "userUnderstanding": {"summary": "what the user seems to want", "inferredSkillLevel": "${packet.inferredUserSkillLevel}", "currentIntent": "same as detectedUserIntent", "confidence": 0.8}
+}`;
 }
 
 function fallbackPatch(reason: string): SpecPatch {
@@ -666,11 +566,136 @@ function fallbackPatch(reason: string): SpecPatch {
   };
 }
 
+function fallbackOrchestration(input: OrchestrateInterviewTurnInput, specPatch: SpecPatch): OrchestratedInterviewTurn {
+  const packet = buildInterviewContextPacket(input);
+  const bestGap = packet.candidateGaps[0];
+
+  return {
+    assistantMessage: bestGap
+      ? `I’m tracking the build shape, and this is the next decision that changes the architecture: ${bestGap.question}`
+      : 'I have enough to summarize the plan and call out the assumptions before building.',
+    detectedUserIntent: 'answering_question',
+    specPatch,
+    nextMove: bestGap ? 'ask_question' : 'confirm_spec',
+    nextQuestion: bestGap
+      ? {
+          question: bestGap.question,
+          targetField: bestGap.path,
+          reason: 'Highest-scoring remaining gap in Clarify’s deterministic governor.',
+        }
+      : null,
+    readiness: packet.readiness,
+    assumptions: packet.assumptions,
+    conflicts: packet.unresolvedConflicts,
+    updatedConversationSummary: packet.conversationSummary || input.latestUserMessage.slice(0, 240),
+    userUnderstanding: {
+      summary: packet.conversationSummary || input.latestUserMessage,
+      inferredSkillLevel: packet.inferredUserSkillLevel,
+      currentIntent: 'answering_question',
+      confidence: 0.5,
+    },
+  };
+}
+
+function stubPatch(input: OrchestrateInterviewTurnInput): SpecPatch {
+  const text = input.latestUserMessage.toLowerCase();
+  const operations: SpecPatchOperation[] = [];
+
+  if (includesAny(text, ['client portal', 'customer portal', 'portal'])) operations.push(operation('set', '/buildType', 'client_portal', 0.86));
+  else if (includesAny(text, ['spreadsheet', 'sheet', 'excel'])) operations.push(operation('set', '/buildType', 'spreadsheet', 0.82));
+  else if (includesAny(text, ['automation', 'workflow', 'automate'])) operations.push(operation('set', '/buildType', 'automation', 0.82));
+  else if (includesAny(text, ['website', 'landing page', 'site'])) operations.push(operation('set', '/buildType', 'website', 0.78));
+  else if (includesAny(text, ['dashboard', 'internal tool', 'business system'])) operations.push(operation('set', '/buildType', 'business_system', 0.78));
+
+  if (includesAny(text, ['customer', 'client'])) operations.push(operation('set', '/primaryUser', 'Customers/clients', 0.8));
+  else if (includesAny(text, ['team', 'internal', 'employee', 'staff'])) operations.push(operation('set', '/primaryUser', 'Internal team', 0.8));
+
+  if (text.includes('detailing')) operations.push(operation('set', '/businessType', 'detailing business', 0.76));
+  if (includesAny(text, ['request services', 'request service', 'service requests'])) {
+    operations.push(operation('set', '/mainGoal', 'Let customers request services clearly.', 0.78));
+    operations.push(operation('append', '/coreFeatures', ['Service request flow'], 0.72));
+  } else if (includesAny(text, ['book', 'booking', 'appointment'])) {
+    operations.push(operation('set', '/mainGoal', 'Turn interest into booked appointments.', 0.76));
+    operations.push(operation('append', '/coreFeatures', ['Booking flow'], 0.72));
+  } else if (includesAny(text, ['track', 'manage', 'dashboard'])) {
+    operations.push(operation('set', '/mainGoal', 'Help the team track work clearly.', 0.72));
+  }
+
+  if (includesAny(text, ['prototype', 'working prototype'])) operations.push(operation('set', '/outputType', 'prototype', 0.84));
+  else if (includesAny(text, ['build prompt', 'prompt'])) operations.push(operation('set', '/outputType', 'build_prompt', 0.84));
+  else if (includesAny(text, ['implementation plan', 'plan'])) operations.push(operation('set', '/outputType', 'implementation_plan', 0.8));
+
+  return {
+    operations,
+    summary: operations.length > 0 ? 'Stub extracted obvious supported fields.' : 'Stub found no obvious supported fields.',
+  };
+}
+
+class StubProvider implements Provider {
+  name = 'stub';
+
+  async orchestrateInterviewTurn(input: OrchestrateInterviewTurnInput) {
+    return fallbackOrchestration(input, stubPatch(input));
+  }
+}
+
+class DeepSeekProvider implements Provider {
+  name = 'deepseek';
+
+  constructor(private apiKey: string, private model: string) {
+    if (!apiKey) throw new Error('DEEPSEEK_API_KEY is required when LLM_PROVIDER=deepseek.');
+  }
+
+  async orchestrateInterviewTurn(input: OrchestrateInterviewTurnInput) {
+    return callDeepSeekJson({
+      apiKey: this.apiKey,
+      model: this.model,
+      prompt: buildOrchestrationPrompt(buildInterviewContextPacket(input)),
+      schema: orchestratedInterviewTurnSchema,
+      operationName: 'orchestrateInterviewTurn',
+    });
+  }
+}
+
+class GeminiProvider implements Provider {
+  name = 'gemini';
+
+  constructor(private apiKey: string, private model: string) {
+    if (!apiKey) throw new Error('GEMINI_API_KEY is required when LLM_PROVIDER=gemini.');
+  }
+
+  async orchestrateInterviewTurn(input: OrchestrateInterviewTurnInput) {
+    return callGeminiJson({
+      apiKey: this.apiKey,
+      model: this.model,
+      prompt: buildOrchestrationPrompt(buildInterviewContextPacket(input)),
+      schema: orchestratedInterviewTurnSchema,
+      operationName: 'orchestrateInterviewTurn',
+    });
+  }
+}
+
+function resolveProvider(): Provider {
+  const providerName = Deno.env.get('LLM_PROVIDER') ?? 'stub';
+  if (providerName === 'deepseek') {
+    return new DeepSeekProvider(
+      Deno.env.get('DEEPSEEK_API_KEY') ?? '',
+      Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-chat',
+    );
+  }
+  if (providerName === 'gemini') {
+    return new GeminiProvider(
+      Deno.env.get('GEMINI_API_KEY') ?? '',
+      Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash',
+    );
+  }
+  return new StubProvider();
+}
+
 function fallbackSummary(spec: BuildSpec, assumptions: string[]) {
-  const excluded =
-    spec.mustNotDo.length > 0
-      ? spec.mustNotDo.join(', ')
-      : 'paid services, secrets, real auth, billing, and production integrations';
+  const excluded = spec.mustNotDo.length > 0
+    ? spec.mustNotDo.join(', ')
+    : 'paid services, secrets, real auth, billing, and production integrations';
   const assumptionText = assumptions.length > 0 ? assumptions.join(', ') : 'no extra assumptions beyond the current spec';
 
   return `Here is the build plan: a ${spec.buildType.replace(/_/g, ' ')} for ${
@@ -689,61 +714,55 @@ serve(async (req) => {
 
   try {
     const request = interviewTurnRequestSchema.parse(await req.json());
+    const markedQuestionHistory = markQuestionHistoryAnswered(request.questionHistory ?? [], request.message);
+    const orchestrationInput: OrchestrateInterviewTurnInput = {
+      sessionId: request.sessionId,
+      latestUserMessage: request.message,
+      currentSpec: request.currentSpec,
+      currentPhase: request.currentPhase ?? 'interview',
+      recentMessages: request.recentMessages,
+      conversationSummary: request.conversationSummary ?? '',
+      questionHistory: markedQuestionHistory,
+      assumptions: request.assumptions ?? request.currentSpec.assumptionLedger ?? [],
+      unresolvedConflicts: request.unresolvedConflicts ?? request.currentSpec.conflicts?.filter((conflict) => conflict.status === 'unresolved') ?? [],
+      selectedBuildMode: request.selectedBuildMode ?? null,
+      artifactGoal: request.artifactGoal ?? null,
+    };
+
     const provider = resolveProvider();
-    const specPatch = await provider
-      .extractSpecUpdates({
-        currentSpec: request.currentSpec,
-        latestUserMessage: request.message,
-        recentMessages: request.recentMessages,
-      })
-      .catch((error: unknown) =>
-        fallbackPatch(error instanceof Error ? error.message : 'Unknown provider extraction error.'),
-      );
+    const orchestration = await provider.orchestrateInterviewTurn(orchestrationInput).catch((error: unknown) =>
+      fallbackOrchestration(
+        orchestrationInput,
+        fallbackPatch(error instanceof Error ? error.message : 'Unknown orchestration error.'),
+      )
+    );
+    const specPatch = specPatchSchema.parse(orchestration.specPatch);
     const updatedSpecBase = applySpecPatch(request.currentSpec, specPatch);
     const readiness = assessReadiness(
       updatedSpecBase,
       request.turnCount ?? request.recentMessages.filter((message) => message.role === 'user').length,
     );
+    const governedReadiness = governorStatus(readiness, updatedSpecBase);
     const updatedSpec = buildSpecSchema.parse({
       ...updatedSpecBase,
       readiness: {
         score: readiness.score,
-        requiredFieldsComplete: readiness.requiredFieldsComplete,
-        reason: readiness.reason,
+        requiredFieldsComplete: readiness.requiredFieldsComplete && governedReadiness.hardBlockers.length === 0,
+        reason: governedReadiness.hardBlockers[0] ?? readiness.reason,
       },
       openQuestions: readiness.openQuestions,
-      governorReadiness: governorStatus(readiness, updatedSpecBase),
+      governorReadiness: governedReadiness,
       updatedAt: new Date().toISOString(),
     });
 
-    let content: string;
-    let nextPhase: 'interview' | 'confirm' = 'interview';
-
-    if (canConfirm(readiness)) {
-      const summary = await provider
-        .summarizeReadiness({
-          currentSpec: updatedSpec,
-          readiness,
-          assumptions: updatedSpec.assumptions,
-        })
-        .catch(() => ({ summary: fallbackSummary(updatedSpec, updatedSpec.assumptions) }));
-      content = summary.summary;
-      nextPhase = 'confirm';
-    } else {
-      content = formatQuestion(
-        await provider
-          .proposeNextQuestion({
-            currentSpec: updatedSpec,
-            readiness,
-            missingFields: readiness.missingFields,
-            openQuestions: readiness.openQuestions,
-            recentMessages: request.recentMessages,
-          })
-          .catch(() => ({
-            question: readiness.openQuestions[0] ?? 'What decision would most change the first version?',
-          })),
-      );
-    }
+    const nextPhase = canConfirm(readiness, updatedSpec) ? 'confirm' : 'interview';
+    const content = nextPhase === 'confirm' && orchestration.nextMove !== 'confirm_spec'
+      ? fallbackSummary(updatedSpec, updatedSpec.assumptions)
+      : orchestration.assistantMessage;
+    const nextQuestionItem = nextPhase === 'interview' && orchestration.nextQuestion
+      ? createQuestionHistoryItem(orchestration.nextQuestion)
+      : null;
+    const nextQuestionHistory = nextQuestionItem ? [...markedQuestionHistory, nextQuestionItem] : markedQuestionHistory;
 
     return jsonResponse(
       interviewTurnResponseSchema.parse({
@@ -754,9 +773,22 @@ serve(async (req) => {
         },
         specPatch,
         updatedSpec,
-        readiness,
+        readiness: {
+          ...readiness,
+          requiredFieldsComplete: readiness.requiredFieldsComplete && governedReadiness.hardBlockers.length === 0,
+          reason: governedReadiness.hardBlockers[0] ?? readiness.reason,
+          blockingOpenQuestions: governedReadiness.hardBlockers,
+        },
         nextPhase,
         provider: provider.name,
+        detectedUserIntent: orchestration.detectedUserIntent,
+        nextMove: orchestration.nextMove,
+        nextQuestion: nextQuestionItem,
+        questionHistory: nextQuestionHistory,
+        assumptions: updatedSpec.assumptionLedger ?? [],
+        conflicts: updatedSpec.conflicts ?? [],
+        updatedConversationSummary: orchestration.updatedConversationSummary,
+        userUnderstanding: orchestration.userUnderstanding,
       }),
     );
   } catch (error) {

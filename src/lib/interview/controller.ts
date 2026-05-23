@@ -8,10 +8,14 @@ import type { InterviewMessage } from './schema';
 import type { LLMProvider } from '../llm/provider';
 import {
   interviewTurnResponseSchema,
+  type LLMSpecPatch,
+  type OrchestratedInterviewTurn,
   type InterviewTurnResponse,
+  type QuestionHistoryItem,
 } from '../llm/schemas';
 import { assessReadiness, canConfirm } from './readiness';
 import { runSpecGovernor } from './governor/apply';
+import { buildInterviewContextPacket, createQuestionHistoryItem, markQuestionHistoryAnswered } from './orchestration';
 
 export type ControllerResult = {
   spec: BuildSpec;
@@ -66,6 +70,11 @@ export type InterviewTurnControllerInput = {
   provider: LLMProvider;
   turnCount?: number;
   maxTurns?: number;
+  currentPhase?: string;
+  conversationSummary?: string;
+  questionHistory?: QuestionHistoryItem[];
+  selectedBuildMode?: 'interview' | 'prototype' | 'build_package' | 'prompt' | 'plan' | null;
+  artifactGoal?: 'implementation_plan' | 'build_prompt' | 'prototype' | 'code_files' | 'spreadsheet' | null;
 };
 
 function fallbackPatch(reason: string) {
@@ -87,23 +96,132 @@ function fallbackSummary(spec: BuildSpec, assumptions: string[]) {
   } that helps with ${spec.mainGoal ?? 'the main outcome'}. This first version will not include ${excluded}. Assumptions: ${assumptionText}. The main tradeoff is keeping the first package specific enough to build without adding production services yet.`;
 }
 
+function fallbackOrchestration(
+  input: InterviewTurnControllerInput,
+  specPatch: LLMSpecPatch,
+): OrchestratedInterviewTurn {
+  const markedHistory = markQuestionHistoryAnswered(input.questionHistory ?? [], input.message);
+  const packet = buildInterviewContextPacket({
+    sessionId: input.sessionId,
+    latestUserMessage: input.message,
+    currentSpec: input.currentSpec,
+    currentPhase: input.currentPhase ?? 'interview',
+    recentMessages: input.recentMessages,
+    conversationSummary: input.conversationSummary ?? '',
+    questionHistory: markedHistory,
+    assumptions: input.currentSpec.assumptionLedger ?? [],
+    unresolvedConflicts: input.currentSpec.conflicts?.filter((conflict) => conflict.status === 'unresolved') ?? [],
+    selectedBuildMode: input.selectedBuildMode ?? null,
+    artifactGoal: input.artifactGoal ?? null,
+  });
+  const bestGap = packet.candidateGaps[0];
+  const assistantMessage = bestGap
+    ? `I’m tracking the shape of this as a build plan, but this decision still changes the architecture: ${bestGap.question}`
+    : 'I have enough to summarize the current plan and call out the assumptions before building.';
+
+  return {
+    assistantMessage,
+    detectedUserIntent: 'answering_question',
+    specPatch,
+    nextMove: bestGap ? 'ask_question' : 'confirm_spec',
+    nextQuestion: bestGap
+      ? {
+          question: bestGap.question,
+          targetField: bestGap.path,
+          reason: 'Highest-scoring remaining gap in the deterministic governor.',
+        }
+      : null,
+    readiness: packet.readiness,
+    assumptions: packet.assumptions,
+    conflicts: packet.unresolvedConflicts,
+    updatedConversationSummary: packet.conversationSummary || input.message.slice(0, 240),
+    userUnderstanding: {
+      summary: packet.conversationSummary || input.message,
+      inferredSkillLevel: packet.inferredUserSkillLevel,
+      currentIntent: 'answering_question',
+      confidence: 0.5,
+    },
+  };
+}
+
 export async function processInterviewTurn({
+  sessionId,
   message,
   currentSpec,
   recentMessages,
   provider,
   turnCount = recentMessages.filter((item) => item.role === 'user').length,
   maxTurns = 10,
+  currentPhase = 'interview',
+  conversationSummary = '',
+  questionHistory = [],
+  selectedBuildMode = null,
+  artifactGoal = null,
 }: InterviewTurnControllerInput): Promise<InterviewTurnResponse> {
-  const specPatch = await provider
-    .extractSpecUpdates({
-      currentSpec,
-      latestUserMessage: message,
-      recentMessages,
-    })
-    .catch((error: unknown) =>
-      fallbackPatch(error instanceof Error ? error.message : 'Unknown provider extraction error.'),
-    );
+  const markedQuestionHistory = markQuestionHistoryAnswered(questionHistory, message);
+  const orchestration = provider.orchestrateInterviewTurn
+    ? await provider
+        .orchestrateInterviewTurn({
+          sessionId,
+          latestUserMessage: message,
+          currentSpec,
+          currentPhase,
+          recentMessages,
+          conversationSummary,
+          questionHistory: markedQuestionHistory,
+          assumptions: currentSpec.assumptionLedger ?? [],
+          unresolvedConflicts: currentSpec.conflicts?.filter((conflict) => conflict.status === 'unresolved') ?? [],
+          selectedBuildMode,
+          artifactGoal,
+        })
+        .catch(async (error: unknown) => {
+          const specPatch = fallbackPatch(
+            error instanceof Error ? error.message : 'Unknown orchestration error.',
+          );
+          return fallbackOrchestration(
+            {
+              sessionId,
+              message,
+              currentSpec,
+              recentMessages,
+              provider,
+              turnCount,
+              maxTurns,
+              currentPhase,
+              conversationSummary,
+              questionHistory: markedQuestionHistory,
+              selectedBuildMode,
+              artifactGoal,
+            },
+            specPatch,
+          );
+        })
+    : fallbackOrchestration(
+        {
+          sessionId,
+          message,
+          currentSpec,
+          recentMessages,
+          provider,
+          turnCount,
+          maxTurns,
+          currentPhase,
+          conversationSummary,
+          questionHistory: markedQuestionHistory,
+          selectedBuildMode,
+          artifactGoal,
+        },
+        await provider
+          .extractSpecUpdates({
+            currentSpec,
+            latestUserMessage: message,
+            recentMessages,
+          })
+          .catch((error: unknown) =>
+            fallbackPatch(error instanceof Error ? error.message : 'Unknown provider extraction error.'),
+          ),
+      );
+  const specPatch = orchestration.specPatch;
   const governed = runSpecGovernor(currentSpec, specPatch, {
     source: 'model_inferred',
     sourceMessageId: [...recentMessages].reverse().find((item) => item.role === 'user')?.id ?? 'provider-turn',
@@ -126,18 +244,16 @@ export async function processInterviewTurn({
   let nextPhase: 'interview' | 'confirm' = 'interview';
 
   if (canConfirm(readiness) && (governed.readiness.status === 'ready' || governed.readiness.status === 'ready_with_assumptions')) {
-    const summary = await provider
-      .summarizeReadiness({
-        currentSpec: updatedSpec,
-        readiness,
-        assumptions: updatedSpec.assumptions,
-      })
-      .catch(() => ({ summary: fallbackSummary(updatedSpec, updatedSpec.assumptions) }));
-    content = summary.summary;
+    content = orchestration.nextMove === 'confirm_spec'
+      ? orchestration.assistantMessage
+      : fallbackSummary(updatedSpec, updatedSpec.assumptions);
     nextPhase = 'confirm';
   } else {
-    content = governed.nextQuestion ?? readiness.openQuestions[0] ?? 'What decision would most change the first version?';
+    content = orchestration.assistantMessage || governed.nextQuestion || readiness.openQuestions[0] || 'What decision would most change the first version?';
   }
+
+  const nextQuestionItem = orchestration.nextQuestion ? createQuestionHistoryItem(orchestration.nextQuestion) : null;
+  const nextQuestionHistory = nextQuestionItem ? [...markedQuestionHistory, nextQuestionItem] : markedQuestionHistory;
 
   return interviewTurnResponseSchema.parse({
     assistantMessage: {
@@ -157,5 +273,13 @@ export async function processInterviewTurn({
     },
     nextPhase,
     provider: provider.name,
+    detectedUserIntent: orchestration.detectedUserIntent,
+    nextMove: orchestration.nextMove,
+    nextQuestion: nextQuestionItem,
+    questionHistory: nextQuestionHistory,
+    assumptions: governed.assumptions,
+    conflicts: governed.conflicts,
+    updatedConversationSummary: orchestration.updatedConversationSummary,
+    userUnderstanding: orchestration.userUnderstanding,
   });
 }

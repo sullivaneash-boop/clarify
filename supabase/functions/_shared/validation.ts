@@ -137,11 +137,117 @@ export const readinessSummaryResponseSchema = z.object({
   summary: z.string(),
 });
 
+export const detectedUserIntentSchema = z.enum([
+  'new_build_request',
+  'answering_question',
+  'asking_meta_question',
+  'changing_previous_answer',
+  'expressing_confusion',
+  'requesting_output',
+  'off_topic',
+]);
+
+export const nextMoveSchema = z.enum([
+  'ask_question',
+  'answer_then_ask',
+  'reflect_and_continue',
+  'confirm_spec',
+  'request_clarification',
+  'hold_off_topic',
+]);
+
+export const selectedBuildModeSchema = z.enum(['interview', 'prototype', 'build_package', 'prompt', 'plan']).nullable();
+export const artifactGoalSchema = z.enum(['implementation_plan', 'build_prompt', 'prototype', 'code_files', 'spreadsheet']).nullable();
+
+export const questionHistoryItemSchema = z.object({
+  id: z.string(),
+  question: z.string(),
+  targetField: z.string(),
+  reason: z.string(),
+  createdAt: z.string(),
+  answered: z.boolean(),
+});
+
+export const userUnderstandingSchema = z.object({
+  summary: z.string(),
+  inferredSkillLevel: z.enum(['nontechnical', 'technical', 'mixed', 'unknown']),
+  currentIntent: detectedUserIntentSchema,
+  confidence: z.number().min(0).max(1),
+});
+
+export const candidateGapSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  question: z.string(),
+  category: z.enum([
+    'architecture',
+    'auth',
+    'data',
+    'integrations',
+    'workflow',
+    'failure_behavior',
+    'output_type',
+    'scope',
+    'cosmetic',
+  ]),
+  impactOnBuild: z.number().min(0).max(5),
+  riskIfWrong: z.number().min(0).max(5),
+  dependencyUnlockValue: z.number().min(0).max(5),
+  userUncertainty: z.number().min(0).max(5),
+  canUseSafeDefault: z.boolean(),
+  questionAnnoyance: z.number().min(0).max(5),
+  score: z.number().min(0).optional(),
+});
+
+export const interviewContextPacketSchema = z.object({
+  sessionId: z.string(),
+  latestUserMessage: z.string(),
+  currentSpec: buildSpecSchema,
+  currentPhase: z.string(),
+  recentMessages: z.array(interviewMessageSchema),
+  conversationSummary: z.string(),
+  questionHistory: z.array(questionHistoryItemSchema),
+  unansweredQuestions: z.array(questionHistoryItemSchema),
+  assumptions: z.array(assumptionRecordSchema),
+  unresolvedConflicts: z.array(conflictSchema),
+  selectedBuildMode: selectedBuildModeSchema,
+  artifactGoal: artifactGoalSchema,
+  inferredUserSkillLevel: userUnderstandingSchema.shape.inferredSkillLevel,
+  readiness: governorReadinessSchema,
+  candidateGaps: z.array(candidateGapSchema),
+});
+
+export const orchestratedInterviewTurnSchema = z.object({
+  assistantMessage: z.string().min(1),
+  detectedUserIntent: detectedUserIntentSchema,
+  specPatch: specPatchSchema,
+  nextMove: nextMoveSchema,
+  nextQuestion: z
+    .object({
+      question: z.string(),
+      targetField: z.string(),
+      reason: z.string(),
+    })
+    .nullable(),
+  readiness: governorReadinessSchema,
+  assumptions: z.array(assumptionRecordSchema),
+  conflicts: z.array(conflictSchema),
+  updatedConversationSummary: z.string(),
+  userUnderstanding: userUnderstandingSchema,
+});
+
 export const interviewTurnRequestSchema = z.object({
   sessionId: z.string().min(1),
   message: z.string().min(1),
   currentSpec: buildSpecSchema,
+  currentPhase: z.string().optional(),
   recentMessages: z.array(interviewMessageSchema),
+  conversationSummary: z.string().optional(),
+  questionHistory: z.array(questionHistoryItemSchema).optional(),
+  assumptions: z.array(assumptionRecordSchema).optional(),
+  unresolvedConflicts: z.array(conflictSchema).optional(),
+  selectedBuildMode: selectedBuildModeSchema.optional(),
+  artifactGoal: artifactGoalSchema.optional(),
   turnCount: z.number().int().min(0).optional(),
 });
 
@@ -156,6 +262,14 @@ export const interviewTurnResponseSchema = z.object({
   readiness: readinessAssessmentSchema,
   nextPhase: z.enum(['interview', 'confirm']),
   provider: z.string().optional(),
+  detectedUserIntent: detectedUserIntentSchema.optional(),
+  nextMove: nextMoveSchema.optional(),
+  nextQuestion: questionHistoryItemSchema.nullable().optional(),
+  questionHistory: z.array(questionHistoryItemSchema).optional(),
+  assumptions: z.array(assumptionRecordSchema).optional(),
+  conflicts: z.array(conflictSchema).optional(),
+  updatedConversationSummary: z.string().optional(),
+  userUnderstanding: userUnderstandingSchema.optional(),
 });
 
 export type BuildSpec = z.infer<typeof buildSpecSchema>;
@@ -166,3 +280,9 @@ export type FieldSource = z.infer<typeof fieldSourceSchema>;
 export type ReadinessAssessment = z.infer<typeof readinessAssessmentSchema>;
 export type NextQuestionResponse = z.infer<typeof nextQuestionResponseSchema>;
 export type ReadinessSummaryResponse = z.infer<typeof readinessSummaryResponseSchema>;
+export type QuestionHistoryItem = z.infer<typeof questionHistoryItemSchema>;
+export type InterviewContextPacket = z.infer<typeof interviewContextPacketSchema>;
+export type OrchestratedInterviewTurn = z.infer<typeof orchestratedInterviewTurnSchema>;
+export type CandidateGap = z.infer<typeof candidateGapSchema>;
+export type SelectedBuildMode = z.infer<typeof selectedBuildModeSchema>;
+export type ArtifactGoal = z.infer<typeof artifactGoalSchema>;

@@ -8,14 +8,18 @@ import type { LLMProvider } from './provider';
 import {
   llmSpecPatchSchema,
   nextQuestionResponseSchema,
+  orchestratedInterviewTurnSchema,
   readinessSummaryResponseSchema,
   type ExtractSpecUpdatesInput,
   type ExtractSpecUpdatesOutput,
+  type OrchestrateInterviewTurnInput,
+  type OrchestrateInterviewTurnOutput,
   type ProposeNextQuestionInput,
   type ProposeNextQuestionOutput,
   type SummarizeReadinessInput,
   type SummarizeReadinessOutput,
 } from './schemas';
+import { buildInterviewContextPacket, buildOrchestrationPrompt } from '../interview/orchestration';
 
 type DeepSeekProviderOptions = {
   apiKey: string;
@@ -169,6 +173,18 @@ export class DeepSeekLLMProvider implements LLMProvider {
       prompt: buildReadinessSummaryPrompt(input),
       schema: readinessSummaryResponseSchema,
       operationName: 'summarizeReadiness',
+      fetchImpl: this.fetchImpl,
+    });
+  }
+
+  async orchestrateInterviewTurn(input: OrchestrateInterviewTurnInput): Promise<OrchestrateInterviewTurnOutput> {
+    const packet = buildInterviewContextPacket(input);
+    return callDeepSeekJson({
+      apiKey: this.apiKey,
+      model: this.model,
+      prompt: buildOrchestrationPrompt(packet),
+      schema: orchestratedInterviewTurnSchema,
+      operationName: 'orchestrateInterviewTurn',
       fetchImpl: this.fetchImpl,
     });
   }

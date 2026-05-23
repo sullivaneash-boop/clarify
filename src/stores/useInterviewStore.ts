@@ -16,6 +16,7 @@ import { createId } from '../lib/utils/ids';
 import { storageKeys } from '../lib/utils/storage';
 import { assessSpec } from '../lib/interview/assess';
 import type { InterviewSeed } from '../lib/onboarding/schema';
+import type { DetectedUserIntent, NextMove, QuestionHistoryItem, UserUnderstanding } from '../lib/llm/schemas';
 
 export type ResultTab = 'overview' | 'prompt' | 'plan' | 'files' | 'spec';
 export type SaveStatus = 'saved' | 'saving' | 'error';
@@ -33,6 +34,11 @@ type InterviewState = {
   saveStatus: SaveStatus;
   providerLabel: string;
   lastPatchSummary: string | null;
+  conversationSummary: string;
+  questionHistory: QuestionHistoryItem[];
+  userUnderstanding: UserUnderstanding | null;
+  detectedUserIntent: DetectedUserIntent | null;
+  nextMove: NextMove | null;
   error: string | null;
   isSpecSheetOpen: boolean;
 };
@@ -52,8 +58,6 @@ type InterviewActions = {
   resetPrototype: () => void;
 };
 
-const assistantIntro =
-  'Good. I’ll keep this focused: one question at a time, only when the answer changes what should be built.';
 const workspaceEntryHint =
   'Clarify asks one question at a time. Answer honestly - "I don\'t know yet" is a valid answer, and a useful one.';
 
@@ -207,6 +211,11 @@ const initialState = (): InterviewState => ({
   saveStatus: 'saved',
   providerLabel: 'stub',
   lastPatchSummary: null,
+  conversationSummary: '',
+  questionHistory: [],
+  userUnderstanding: null,
+  detectedUserIntent: null,
+  nextMove: null,
   error: null,
   isSpecSheetOpen: false,
 });
@@ -232,7 +241,6 @@ export const useInterviewStore = create<InterviewState & InterviewActions>()(
 
         const state = get();
         const userMessage = createMessage('user', trimmed);
-        const shouldShowIntro = state.messages.length === 0;
 
         set({
           phase: mode === 'iteration' ? state.phase : 'interview',
@@ -251,15 +259,19 @@ export const useInterviewStore = create<InterviewState & InterviewActions>()(
               message: trimmed,
               currentSpec: current.activeSpec,
               recentMessages: current.messages,
+              currentPhase: current.phase,
+              conversationSummary: current.conversationSummary,
+              questionHistory: current.questionHistory,
+              assumptions: current.activeSpec.assumptionLedger ?? [],
+              unresolvedConflicts: current.activeSpec.conflicts?.filter((conflict) => conflict.status === 'unresolved') ?? [],
+              selectedBuildMode: 'interview',
+              artifactGoal: current.activeSpec.outputType,
               turnCount: current.messages.filter((message) => message.role === 'user').length,
             });
-            const assistantContent = shouldShowIntro
-              ? `${assistantIntro}\n\n${response.assistantMessage.content}`
-              : response.assistantMessage.content;
             const assistantMessage: InterviewMessage = {
               id: createId('msg'),
               role: 'assistant',
-              content: assistantContent,
+              content: response.assistantMessage.content,
               createdAt: response.assistantMessage.createdAt,
               status: 'complete',
             };
@@ -276,6 +288,11 @@ export const useInterviewStore = create<InterviewState & InterviewActions>()(
               saveStatus: 'saved',
               providerLabel: response.provider ?? 'edge',
               lastPatchSummary: response.specPatch.summary,
+              conversationSummary: response.updatedConversationSummary ?? current.conversationSummary,
+              questionHistory: response.questionHistory ?? current.questionHistory,
+              userUnderstanding: response.userUnderstanding ?? current.userUnderstanding,
+              detectedUserIntent: response.detectedUserIntent ?? current.detectedUserIntent,
+              nextMove: response.nextMove ?? current.nextMove,
               error: null,
             });
           } catch (error) {
@@ -447,6 +464,7 @@ export const useInterviewStore = create<InterviewState & InterviewActions>()(
             messages: [userMessage, assistantMessage],
             providerLabel: 'stub',
             lastPatchSummary: 'Started from scratch onboarding seed.',
+            conversationSummary: seed.initialPrompt,
             saveStatus: 'saved',
           });
           return;
@@ -467,6 +485,19 @@ export const useInterviewStore = create<InterviewState & InterviewActions>()(
           messages: [userMessage, assistantMessage],
           providerLabel: 'stub',
           lastPatchSummary: 'Started from sample onboarding seed.',
+          conversationSummary: seed.initialPrompt,
+          questionHistory: seed.firstQuestion
+            ? [
+                {
+                  id: createId('question'),
+                  question: seed.firstQuestion,
+                  targetField: '/openQuestions',
+                  reason: 'Seeded from onboarding sample.',
+                  createdAt: new Date().toISOString(),
+                  answered: false,
+                },
+              ]
+            : [],
           saveStatus: 'saved',
         });
       },
@@ -487,6 +518,11 @@ export const useInterviewStore = create<InterviewState & InterviewActions>()(
         saveStatus: state.saveStatus,
         providerLabel: state.providerLabel,
         lastPatchSummary: state.lastPatchSummary,
+        conversationSummary: state.conversationSummary,
+        questionHistory: state.questionHistory,
+        userUnderstanding: state.userUnderstanding,
+        detectedUserIntent: state.detectedUserIntent,
+        nextMove: state.nextMove,
       }),
     },
   ),

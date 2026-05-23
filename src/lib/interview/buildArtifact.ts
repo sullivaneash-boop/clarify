@@ -75,13 +75,34 @@ export function generateResultArtifact(spec: BuildSpec, buildJob: BuildJob, iter
 ## Plain-English Summary
 Build a ${toTitle(spec.buildType).toLowerCase()} for ${spec.primaryUser ?? 'the primary user'} that helps them ${sentenceFragment(spec.mainGoal, 'complete the main job')}.
 
-## First Version Recommendation
+## Project Summary
+Build a ${toTitle(spec.buildType).toLowerCase()} for ${spec.primaryUser ?? 'the primary user'} that helps them ${sentenceFragment(spec.mainGoal, 'complete the main job')}.
+
+## User Goal
+${spec.mainGoal ?? 'TBD'}
+
+## Target Users
+${spec.primaryUser ?? 'TBD'}
+
+## MVP Scope
 Ship the smallest useful version as a local-first, testable product surface. The first version should focus on ${inline(
     spec.coreFeatures,
     'the core workflow confirmed during the interview',
   )}.
 
-## Intentionally Excluded
+## Core Workflows
+${list(spec.coreFeatures, 'Define the first core workflow before building.')}
+
+## Data Model
+${list(spec.dataToTrack, 'Start with a local spec object and add entities after data needs are confirmed.')}
+
+## Auth And Roles
+${list(spec.userRoles, 'Single unauthenticated local user for the prototype.')}
+
+## Integrations
+${list(spec.integrations, 'None required for the local prototype.')}
+
+## Must-Not-Do List
 ${list(spec.mustNotDo, 'Anything that requires paid services, real auth, billing, API keys, or production data.')}
 
 ## Assumptions
@@ -108,6 +129,9 @@ You are building ${title}. Use ${recommendedStack(spec)}
 
 ## First Version Scope
 ${list(spec.coreFeatures, 'Define the smallest useful core workflow before building.')}
+
+## Core Workflows
+${list(spec.coreFeatures, 'Confirm the workflow before adding secondary features.')}
 
 ## Data To Track
 ${list(spec.dataToTrack, 'Avoid persistent production data until the model is confirmed.')}

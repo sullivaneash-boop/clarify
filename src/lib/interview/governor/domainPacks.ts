@@ -3,12 +3,12 @@ import type { CandidateGap, PatchPath } from './schemas';
 
 export type DomainPackId =
   | 'website'
-  | 'landing-page'
-  | 'internal-tool'
-  | 'client-portal'
+  | 'web_app'
+  | 'internal_tool'
+  | 'client_portal'
   | 'automation'
   | 'spreadsheet'
-  | 'revops-pipeline';
+  | 'unknown';
 
 export type DomainPack = {
   id: DomainPackId;
@@ -43,8 +43,8 @@ function blockersFor(spec: BuildSpec, paths: PatchPath[]) {
 }
 
 export const DOMAIN_PACKS: Record<DomainPackId, DomainPack> = {
-  'internal-tool': {
-    id: 'internal-tool',
+  internal_tool: {
+    id: 'internal_tool',
     label: 'Internal tool',
     schemaExtensions: ['workflowSteps', 'dataToTrack', 'userRoles', 'failureBehavior'],
     requiredFields: ['/buildType', '/primaryUser', '/mainGoal', '/dataToTrack', '/outputType'],
@@ -60,6 +60,23 @@ export const DOMAIN_PACKS: Record<DomainPackId, DomainPack> = {
     },
     readinessRubric: ['Primary user and data model are known.', 'Workflow is clear.', 'Output format is selected.'],
     artifactTemplate: 'internal-tool-package',
+  },
+  web_app: {
+    id: 'web_app',
+    label: 'Web app',
+    schemaExtensions: ['authModel', 'dataModel', 'coreWorkflow', 'roles'],
+    requiredFields: ['/buildType', '/primaryUser', '/mainGoal', '/dataToTrack', '/outputType'],
+    hardBlockers: (spec) => blockersFor(spec, ['/buildType', '/primaryUser', '/mainGoal', '/outputType']),
+    defaults: {
+      '/technicalConstraints': ['Local-first prototype before production services.'],
+    },
+    questionTemplates: {
+      ...commonQuestions,
+      '/dataToTrack': 'What data does the app need to create, show, or update for users?',
+      '/userRoles': 'Does everyone see the same thing, or are there different roles and permissions?',
+    },
+    readinessRubric: ['Audience, core workflow, data model, and output are clear.'],
+    artifactTemplate: 'web-app-package',
   },
   automation: {
     id: 'automation',
@@ -90,19 +107,8 @@ export const DOMAIN_PACKS: Record<DomainPackId, DomainPack> = {
     readinessRubric: ['Audience, goal, and output are clear.'],
     artifactTemplate: 'website-package',
   },
-  'landing-page': {
-    id: 'landing-page',
-    label: 'Landing page',
-    schemaExtensions: ['offer', 'conversionAction', 'proof'],
-    requiredFields: ['/buildType', '/primaryUser', '/mainGoal', '/outputType'],
-    hardBlockers: (spec) => blockersFor(spec, ['/buildType', '/primaryUser', '/mainGoal', '/outputType']),
-    defaults: { '/coreFeatures': ['Hero', 'Offer section', 'Primary call to action'] },
-    questionTemplates: commonQuestions,
-    readinessRubric: ['Offer and conversion action are known.'],
-    artifactTemplate: 'landing-page-package',
-  },
-  'client-portal': {
-    id: 'client-portal',
+  client_portal: {
+    id: 'client_portal',
     label: 'Client portal',
     schemaExtensions: ['permissions', 'clientVisibleData', 'inviteFlow'],
     requiredFields: ['/buildType', '/primaryUser', '/mainGoal', '/dataToTrack', '/userRoles', '/outputType'],
@@ -126,30 +132,28 @@ export const DOMAIN_PACKS: Record<DomainPackId, DomainPack> = {
     readinessRubric: ['Inputs, outputs, and update cadence are known.'],
     artifactTemplate: 'spreadsheet-package',
   },
-  'revops-pipeline': {
-    id: 'revops-pipeline',
-    label: 'RevOps pipeline',
-    schemaExtensions: ['leadSource', 'dedupeRules', 'handoffRules', 'crmTarget'],
-    requiredFields: ['/buildType', '/primaryUser', '/mainGoal', '/dataToTrack', '/integrations', '/outputType'],
-    hardBlockers: (spec) => blockersFor(spec, ['/primaryUser', '/mainGoal', '/outputType']),
-    defaults: { '/technicalConstraints': ['Review proposed changes before applying them.'] },
-    questionTemplates: {
-      ...commonQuestions,
-      '/dataToTrack': 'What fields define a unique lead, and what should happen when two records disagree?',
-    },
-    readinessRubric: ['Dedupe rule, source, and handoff target are known.'],
-    artifactTemplate: 'revops-pipeline-package',
+  unknown: {
+    id: 'unknown',
+    label: 'Unknown',
+    schemaExtensions: ['buildTypeDiscovery', 'primaryUser', 'mainGoal', 'artifactGoal'],
+    requiredFields: ['/buildType', '/primaryUser', '/mainGoal', '/outputType'],
+    hardBlockers: (spec) => blockersFor(spec, ['/buildType', '/primaryUser', '/mainGoal', '/outputType']),
+    defaults: {},
+    questionTemplates: commonQuestions,
+    readinessRubric: ['The first pass identifies what kind of thing is being built and who it is for.'],
+    artifactTemplate: 'generic-package',
   },
 };
 
 export function inferDomainPackId(spec: BuildSpec): DomainPackId {
   if (spec.buildType === 'automation') return 'automation';
-  if (spec.buildType === 'client_portal') return 'client-portal';
+  if (spec.buildType === 'client_portal') return 'client_portal';
   if (spec.buildType === 'spreadsheet') return 'spreadsheet';
-  if (spec.buildType === 'landing_page') return 'landing-page';
+  if (spec.buildType === 'landing_page') return 'website';
   if (spec.buildType === 'website') return 'website';
-  if (spec.coreFeatures.some((item) => /lead|crm|dedupe|sales/i.test(item))) return 'revops-pipeline';
-  return 'internal-tool';
+  if (spec.buildType === 'business_system') return 'internal_tool';
+  if (spec.coreFeatures.some((item) => /app|login|workflow|dashboard/i.test(item))) return 'web_app';
+  return 'unknown';
 }
 
 export function getDomainPack(spec: BuildSpec) {
