@@ -258,15 +258,15 @@ export function QuestionCockpit({ initialSession, onResetToPrompt }: QuestionCoc
                   <div className="flex items-start gap-3">
                     <FileCheck2 className="mt-1 h-5 w-5 text-accent" aria-hidden="true" />
                     <div>
-                      <h1 className="text-3xl font-semibold leading-tight text-text">Build contract is ready.</h1>
+                      <h1 className="text-3xl font-semibold leading-tight text-text">Ready to review your build plan.</h1>
                       <p className="mt-3 max-w-2xl text-sm leading-6 text-text-muted">
-                        Review the spec before generating. Defaults and custom answers stay visible in the handoff.
+                        Clarify now has enough high-impact decisions to avoid building the wrong first version.
                       </p>
                     </div>
                   </div>
                   <div className="mt-6 flex flex-col gap-2 sm:flex-row">
                     <Button type="button" variant="primary" className="min-h-12" onClick={() => safeDispatch({ type: 'OPEN_REVIEW', open: true })}>
-                      Review build contract
+                      Review plan
                     </Button>
                     <Button type="button" variant="secondary" className="min-h-12" icon={<PanelRight className="h-4 w-4" />} onClick={() => setSpecSheetOpen(true)}>
                       Open live spec
@@ -277,7 +277,7 @@ export function QuestionCockpit({ initialSession, onResetToPrompt }: QuestionCoc
             </AnimatePresence>
 
             <div className="hidden rounded-[8px] border border-border bg-surface-inset px-4 py-3 text-xs text-text-subtle md:block">
-              <span className="font-mono">1-4</span> selects · <span className="font-mono">U</span> opens default ·{' '}
+              <span className="font-mono">1-9</span> selects · <span className="font-mono">U</span> opens default ·{' '}
               <span className="font-mono">C</span> writes custom · <span className="font-mono">⌘Z</span> undoes
             </div>
           </div>

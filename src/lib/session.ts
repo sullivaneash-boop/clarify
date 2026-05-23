@@ -38,22 +38,43 @@ function snapshot(session: ClarifySession): SessionSnapshot {
   };
 }
 
-export function computeReadiness(session: Pick<ClarifySession, 'questions' | 'answeredQuestionIds'>): BuildReadiness {
-  const totalWeight = session.questions.reduce((sum, question) => sum + question.readinessWeight, 0);
-  const answered = new Set(session.answeredQuestionIds);
-  const answeredWeight = session.questions.reduce(
-    (sum, question) => (answered.has(question.id) ? sum + question.readinessWeight : sum),
-    0,
-  );
-  const missingHighImpact = session.questions.filter(
-    (question) => !answered.has(question.id) && (question.importance === 'critical' || question.importance === 'high'),
-  );
+const readinessRequirements = [
+  'buildType',
+  'primaryUser',
+  'mainThingTrackedOrGoal',
+  'firstVersionScope',
+  'desiredOutput',
+] as const;
 
+function hasValue(value: string | null | undefined) {
+  return Boolean(value && value.trim().length > 0);
+}
+
+export function missingReadinessRequirements(spec: ClarifySession['spec']) {
+  const missing: string[] = [];
+  if (spec.buildType === 'unknown') missing.push('Build type');
+  if (!hasValue(spec.primaryUser) || spec.primaryUser === 'Not sure yet') missing.push('Primary user');
+  if ((!hasValue(spec.mainThingTracked) || spec.mainThingTracked === 'Something else') && !hasValue(spec.mainGoal)) {
+    missing.push('Main thing tracked or core goal');
+  }
+  if (!hasValue(spec.firstVersionScope) || spec.firstVersionScope === 'Not sure yet') missing.push('First version scope');
+  if (!spec.desiredOutput) missing.push('Desired output');
+  return missing;
+}
+
+export function computeReadiness(session: Pick<ClarifySession, 'spec' | 'questions' | 'answeredQuestionIds'>): BuildReadiness {
+  const missingRequirements = missingReadinessRequirements(session.spec);
+  const decisionsRemaining = missingRequirements.length;
+  const ready = decisionsRemaining === 0;
   return {
-    score: Math.round((answeredWeight / totalWeight) * 100),
-    answeredWeight,
-    totalWeight,
-    missingHighImpact,
+    ready,
+    statusText: ready
+      ? 'Ready to review'
+      : decisionsRemaining === readinessRequirements.length
+        ? 'Not ready yet'
+        : `Need ${decisionsRemaining} more decision${decisionsRemaining === 1 ? '' : 's'}`,
+    decisionsRemaining,
+    missingRequirements,
   };
 }
 
@@ -106,6 +127,11 @@ function commitAnswer(
     ...session,
     answeredQuestionIds,
   };
+  const nextReadiness = computeReadiness({
+    ...session,
+    spec: nextSpec,
+    answeredQuestionIds,
+  });
   const nextSession: ClarifySession = {
     ...session,
     spec: nextSpec,
@@ -113,7 +139,14 @@ function commitAnswer(
     answeredQuestionIds,
     currentQuestionId: getNextQuestionId(partialSession),
     previewPatch: null,
-    readiness: computeReadiness({ questions: session.questions, answeredQuestionIds }),
+    readiness: nextReadiness,
+    phase: nextReadiness.ready
+      ? 'confirm'
+      : questionId === session.questions[0]?.id
+        ? 'interview'
+        : session.phase === 'clarify_category'
+          ? 'interview'
+          : 'interview',
     undoStack: capUndoStack([...session.undoStack, snapshot(session)]),
     lastImpact: {
       id: makeId('impact'),
@@ -139,7 +172,7 @@ export function sessionReducer(session: ClarifySession, action: SessionAction): 
         ...session,
         questions,
         currentQuestionId: session.currentQuestionId ?? action.question.id,
-        readiness: computeReadiness({ questions, answeredQuestionIds: session.answeredQuestionIds }),
+        readiness: computeReadiness({ ...session, questions, answeredQuestionIds: session.answeredQuestionIds }),
       };
       return ClarifySessionSchema.parse(next);
     }
@@ -237,12 +270,14 @@ export function sessionReducer(session: ClarifySession, action: SessionAction): 
       return {
         ...session,
         reviewOpen: action.open,
+        phase: action.open ? 'confirm' : session.phase,
       };
 
     case 'GENERATE_PACKAGE':
       return {
         ...session,
         reviewOpen: true,
+        phase: 'result',
         buildPackage: BuildPackageSchema.parse(action.buildPackage),
       };
 
@@ -271,5 +306,5 @@ export function sessionReducer(session: ClarifySession, action: SessionAction): 
 }
 
 export function isBuildReady(session: ClarifySession) {
-  return session.readiness.score >= 85;
+  return session.readiness.ready;
 }

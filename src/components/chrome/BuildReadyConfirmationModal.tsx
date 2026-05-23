@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { CheckCircle2, Copy, FileText, X } from 'lucide-react';
+import { CheckCircle2, Copy, FileText, Hammer, X } from 'lucide-react';
 import type { ClarifySession } from '../../lib/schemas';
 import { cn } from '../../lib/utils';
 import { AnswerConfidenceIndicator } from '../spec/AnswerConfidenceIndicator';
@@ -45,6 +45,14 @@ function AnswerFlagList({ session }: { session: ClarifySession }) {
   );
 }
 
+function plainList(values: string[], fallback: string) {
+  return values.length ? values : [fallback];
+}
+
+function lineList(values: { text: string }[], fallback: string) {
+  return values.length ? values.map((value) => value.text) : [fallback];
+}
+
 export function BuildReadyConfirmationModal({
   session,
   open,
@@ -61,9 +69,9 @@ export function BuildReadyConfirmationModal({
           <div className="flex min-h-0 w-full flex-col">
             <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
               <div>
-                <Dialog.Title className="text-lg font-semibold text-text">Review the build contract</Dialog.Title>
+                <Dialog.Title className="text-lg font-semibold text-text">Review your first build plan</Dialog.Title>
                 <Dialog.Description className="mt-1 text-sm text-text-muted">
-                  Defaults and custom answers are flagged before handoff.
+                  Clarify only unlocks this when enough high-impact decisions are known.
                 </Dialog.Description>
               </div>
               <Dialog.Close asChild>
@@ -85,17 +93,36 @@ export function BuildReadyConfirmationModal({
                   </div>
                 </div>
 
+                <div className="mt-5 grid gap-3">
+                  <PlanCard title="What you're building" items={[session.spec.buildType.replace(/_/g, ' ')]} />
+                  <PlanCard title="Who it's for" items={[session.spec.primaryUser ?? 'Still needed']} />
+                  <PlanCard
+                    title="What it will do"
+                    items={plainList(
+                      [
+                        session.spec.mainThingTracked ? `Track: ${session.spec.mainThingTracked}` : '',
+                        session.spec.mainGoal ? `Goal: ${session.spec.mainGoal}` : '',
+                        ...lineList(session.spec.features, '').filter(Boolean),
+                      ].filter(Boolean),
+                      'Still shaping the first workflow.',
+                    )}
+                  />
+                  <PlanCard
+                    title="What it will not include yet"
+                    items={lineList(session.spec.outOfScope, 'No explicit exclusions locked yet.')}
+                  />
+                  <PlanCard title="Assumptions" items={lineList(session.spec.risks, 'No major assumptions currently flagged.')} />
+                  <PlanCard
+                    title="Recommended first output"
+                    items={[session.spec.desiredOutput?.replace(/_/g, ' ') ?? 'Implementation plan']}
+                  />
+                </div>
+
                 <div className="mt-5">
                   <h3 className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-text-subtle">
                     Flagged decisions
                   </h3>
                   <AnswerFlagList session={session} />
-                </div>
-
-                <div className="mt-5 grid gap-2 text-sm text-text-muted">
-                  <p>Readiness: {session.readiness.score}%</p>
-                  <p>Answered decisions: {session.answers.length} of {session.questions.length}</p>
-                  <p>Architecture: auth {session.spec.architecture.auth}, payments {session.spec.architecture.payments}, deployment {session.spec.architecture.deployment}</p>
                 </div>
               </div>
 
@@ -141,14 +168,28 @@ export function BuildReadyConfirmationModal({
                 className={cn('min-h-12', session.buildPackage && 'border-border-strong bg-surface-raised text-text')}
                 disabled={generating}
                 onClick={onGenerate}
+                  icon={<Hammer className="h-4 w-4" />}
               >
-                {session.buildPackage ? 'Regenerate Codex handoff' : 'Generate Codex handoff'}
+                  {session.buildPackage ? 'Regenerate build package' : 'Build this'}
               </Button>
             </footer>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function PlanCard({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-[8px] border border-border bg-surface-inset px-3 py-3">
+      <h4 className="text-xs font-medium uppercase tracking-[0.14em] text-text-subtle">{title}</h4>
+      <ul className="mt-2 space-y-1.5 text-sm leading-6 text-text">
+        {items.map((item) => (
+          <li key={`${title}-${item}`}>{item}</li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

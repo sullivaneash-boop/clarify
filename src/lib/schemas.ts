@@ -1,5 +1,16 @@
 import { z } from 'zod';
 
+export const InterviewPhaseSchema = z.enum(['intake', 'clarify_category', 'interview', 'confirm', 'building', 'result']);
+export const BuildCategorySchema = z.enum([
+  'internal_dashboard',
+  'client_portal',
+  'landing_page',
+  'automation',
+  'saas_mvp',
+  'spreadsheet_tool',
+  'unknown',
+]);
+export const DesiredOutputSchema = z.enum(['implementation_plan', 'build_prompt', 'prototype', 'spreadsheet_plan']);
 export const QuestionTypeSchema = z.enum(['intent-confirm', 'tradeoff', 'fork', 'scope', 'freeform', 'review']);
 export const ResponseModeSchema = z.enum(['options-only', 'options-or-custom', 'unsure-allowed', 'free']);
 export const ImportanceSchema = z.enum(['critical', 'high', 'medium', 'low']);
@@ -57,6 +68,12 @@ export const SpecDocSchema = z
   .object({
     projectName: z.string(),
     oneLiner: z.string(),
+    buildType: BuildCategorySchema,
+    primaryUser: z.string().nullable(),
+    mainThingTracked: z.string().nullable(),
+    mainGoal: z.string().nullable(),
+    firstVersionScope: z.string().nullable(),
+    desiredOutput: DesiredOutputSchema.nullable(),
     users: z.array(SpecLineSchema),
     features: z.array(SpecLineSchema),
     dataModel: z.array(SpecLineSchema),
@@ -89,7 +106,7 @@ export const QuestionSchema = z
     whyItMatters: z.string(),
     importance: ImportanceSchema,
     readinessWeight: z.number().positive(),
-    options: z.array(DecisionOptionSchema).min(2).max(4),
+    options: z.array(DecisionOptionSchema).min(2).max(10),
     recommendedOptionId: z.string(),
     smartDefaultRationale: z.string(),
   })
@@ -123,10 +140,10 @@ export const SpecImpactSchema = z
 
 export const BuildReadinessSchema = z
   .object({
-    score: z.number().min(0).max(100),
-    answeredWeight: z.number().min(0),
-    totalWeight: z.number().positive(),
-    missingHighImpact: z.array(QuestionSchema),
+    ready: z.boolean(),
+    statusText: z.string(),
+    decisionsRemaining: z.number().min(0),
+    missingRequirements: z.array(z.string()),
   })
   .strict();
 
@@ -153,6 +170,7 @@ export const SessionSnapshotSchema = z
 export const ClarifySessionSchema = z
   .object({
     id: z.string(),
+    phase: InterviewPhaseSchema,
     initialPrompt: z.string(),
     projectName: z.string(),
     questions: z.array(QuestionSchema),
@@ -174,6 +192,9 @@ export type ResponseMode = z.infer<typeof ResponseModeSchema>;
 export type Importance = z.infer<typeof ImportanceSchema>;
 export type Confidence = z.infer<typeof ConfidenceSchema>;
 export type ImpactTag = z.infer<typeof ImpactTagSchema>;
+export type InterviewPhase = z.infer<typeof InterviewPhaseSchema>;
+export type BuildCategory = z.infer<typeof BuildCategorySchema>;
+export type DesiredOutput = z.infer<typeof DesiredOutputSchema>;
 export type JSONPatch = z.infer<typeof JSONPatchSchema>;
 export type SpecLine = z.infer<typeof SpecLineSchema>;
 export type SpecDoc = z.infer<typeof SpecDocSchema>;

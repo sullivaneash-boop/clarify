@@ -1,4 +1,4 @@
-import { createInitialSpec, saasMvpQuestions } from '../templates/saas-mvp';
+import { classifyBuildCategory, createInitialSpec, createInterviewQuestions } from '../templates/saas-mvp';
 import { computeReadiness } from '../session';
 import {
   BuildPackageSchema,
@@ -11,24 +11,25 @@ import {
 import { makeId, titleFromPrompt } from '../utils';
 
 export function createInitialSession(initialPrompt: string): ClarifySession {
-  const spec = createInitialSpec(initialPrompt);
+  const buildType = classifyBuildCategory(initialPrompt);
+  const questions = createInterviewQuestions(buildType);
+  const spec = createInitialSpec(initialPrompt, buildType);
   const session: ClarifySession = {
     id: makeId('session'),
+    phase: 'clarify_category',
     initialPrompt,
     projectName: titleFromPrompt(initialPrompt),
-    questions: saasMvpQuestions,
-    currentQuestionId: saasMvpQuestions[0]?.id ?? null,
+    questions,
+    currentQuestionId: questions[0]?.id ?? null,
     answeredQuestionIds: [],
     answers: [],
     spec,
     previewPatch: null,
     readiness: {
-      score: 0,
-      answeredWeight: 0,
-      totalWeight: saasMvpQuestions.reduce((sum, question) => sum + question.readinessWeight, 0),
-      missingHighImpact: saasMvpQuestions.filter(
-        (question) => question.importance === 'critical' || question.importance === 'high',
-      ),
+      ready: false,
+      statusText: 'Not ready yet',
+      decisionsRemaining: 5,
+      missingRequirements: [],
     },
     undoStack: [],
     lastImpact: null,
@@ -95,8 +96,21 @@ export async function generateBuildPackage(session: ClarifySession): Promise<Bui
   const { spec } = session;
   const markdown = `# Codex handoff: ${spec.projectName}
 
-## Product direction
+## What you're building
 ${spec.oneLiner}
+
+## Build type
+${spec.buildType.replace(/_/g, ' ')}
+
+## Who it's for
+${spec.primaryUser ?? 'Not locked yet'}
+
+## What it tracks / does
+- Main thing tracked: ${spec.mainThingTracked ?? 'Not locked yet'}
+- Main goal: ${spec.mainGoal ?? 'Not locked yet'}
+
+## First version scope
+- ${spec.firstVersionScope ?? 'Not locked yet'}
 
 ## Users
 ${listLines(spec.users)}
@@ -123,8 +137,11 @@ ${listLines(spec.outOfScope)}
 ## Risks and revisit
 ${listLines([...spec.risks, ...spec.openQuestions])}
 
+## Recommended first output
+${spec.desiredOutput?.replace(/_/g, ' ') ?? 'implementation plan'}
+
 ## Build instruction
-Build the v1 prototype from this contract. Keep scope constrained to the locked/default decisions. Flag every custom or assumed line before implementing it.`;
+Build the first version from this plan. Keep scope constrained to locked decisions and surface any assumptions before implementation.`;
 
   return BuildPackageSchema.parse({
     id: makeId('package'),

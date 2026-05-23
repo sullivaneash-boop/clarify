@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { motion } from 'motion/react';
+import { Sparkles } from 'lucide-react';
 import type { DecisionOption as DecisionOptionType, JSONPatch, Question } from '../../lib/schemas';
-import { cn } from '../../lib/utils';
-import { Badge } from '../ui/Badge';
 import { DecisionOption } from './DecisionOption';
 import { UnsurePath } from './UnsurePath';
 import { CustomAnswerInput } from './CustomAnswerInput';
@@ -20,13 +18,6 @@ type QuestionCardProps = {
   onCustomCommit: (payload: { rawText: string; canonicalText: string; specPatch: JSONPatch[] }) => void;
 };
 
-const importanceTone: Record<Question['importance'], 'danger' | 'warning' | 'info' | 'neutral'> = {
-  critical: 'danger',
-  high: 'warning',
-  medium: 'info',
-  low: 'neutral',
-};
-
 export function QuestionCard({
   question,
   unsureOpen,
@@ -38,11 +29,9 @@ export function QuestionCard({
   onClearPreview,
   onCustomCommit,
 }: QuestionCardProps) {
-  const [whyOpen, setWhyOpen] = useState(false);
   const [pendingOptionId, setPendingOptionId] = useState<string | null>(null);
 
   useEffect(() => {
-    setWhyOpen(false);
     setPendingOptionId(null);
   }, [question.id]);
 
@@ -62,10 +51,9 @@ export function QuestionCard({
       aria-labelledby={`${question.id}-title`}
     >
       <div className="border-b border-border px-5 py-4 sm:px-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={importanceTone[question.importance]}>{question.importance}</Badge>
-          <Badge tone="accent">{question.readinessWeight} readiness weight</Badge>
-          <span className="font-mono text-xs uppercase tracking-[0.14em] text-text-subtle">{question.type}</span>
+        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-accent">
+          <Sparkles className="h-3.5 w-3.5" />
+          Clarify interview
         </div>
         <h1
           id={`${question.id}-title`}
@@ -73,6 +61,7 @@ export function QuestionCard({
         >
           {question.title}
         </h1>
+        <p className="mt-4 max-w-3xl text-sm leading-6 text-text-muted">{question.whyItMatters}</p>
       </div>
 
       <div className="space-y-5 px-5 py-5 sm:px-6">
@@ -100,32 +89,6 @@ export function QuestionCard({
           <CustomAnswerInput question={question} openSignal={customOpenSignal} onCommit={onCustomCommit} />
         </div>
 
-        <div className="border-t border-border pt-4">
-          <button
-            type="button"
-            className={cn(
-              'flex min-h-11 w-full items-center justify-between gap-3 rounded-[7px] text-left text-sm text-text-muted transition hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]',
-            )}
-            onClick={() => setWhyOpen((open) => !open)}
-            aria-expanded={whyOpen}
-          >
-            <span>Why this matters</span>
-            {whyOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
-          <AnimatePresence initial={false}>
-            {whyOpen ? (
-              <motion.p
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.18, ease: 'easeOut' }}
-                className="overflow-hidden text-sm leading-6 text-text-muted"
-              >
-                {question.whyItMatters}
-              </motion.p>
-            ) : null}
-          </AnimatePresence>
-        </div>
       </div>
     </motion.article>
   );
