@@ -30,7 +30,7 @@ export function Button({ className, variant = 'secondary', size = 'md', icon, ch
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-button border font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] disabled:cursor-not-allowed disabled:opacity-60',
+        'inline-flex items-center justify-center gap-2 rounded-button border font-medium transition duration-[var(--motion-base)] ease-[var(--ease-standard)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] disabled:cursor-not-allowed disabled:opacity-60',
         variants[variant],
         sizes[size],
         className,

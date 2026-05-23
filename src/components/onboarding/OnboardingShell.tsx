@@ -6,6 +6,7 @@ import { HowItWorksStep } from './HowItWorksStep';
 import { ChooseStartingPointStep } from './ChooseStartingPointStep';
 import { useOnboardingStore } from '../../stores/useOnboardingStore';
 import { LogoMark } from '../shell/LogoMark';
+import { ParticleField } from '../ui/ParticleField';
 
 export function OnboardingShell() {
   const currentStep = useOnboardingStore((state) => state.currentStep);
@@ -52,6 +53,7 @@ export function OnboardingShell() {
 
       <main className="relative px-4 sm:px-6">
         <div className="pointer-events-none absolute inset-0 -z-10">
+          <ParticleField className="opacity-55" particleCount={78} />
           <div className="premium-noise absolute inset-0 opacity-[0.2]" />
           <div className="absolute left-0 top-0 h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle,rgba(216,138,82,0.18)_0%,rgba(216,138,82,0)_72%)] blur-3xl" />
           <div className="absolute bottom-0 right-0 h-[380px] w-[380px] rounded-full bg-[radial-gradient(circle,rgba(141,157,196,0.16)_0%,rgba(141,157,196,0)_70%)] blur-3xl" />

@@ -34,6 +34,14 @@
   --shadow-soft: 0 12px 40px rgba(0, 0, 0, 0.24);
   --shadow-panel: 0 20px 80px rgba(0, 0, 0, 0.32);
 
+  --motion-fast: 140ms;
+  --motion-base: 240ms;
+  --motion-slow: 420ms;
+  --motion-hero-step: 520ms;
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-smooth-out: cubic-bezier(0.16, 1, 0.3, 1);
+
   color-scheme: dark;
   font-family:
     "ff-chambers-sans-web", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -139,12 +147,55 @@ button {
     transparent 65%
   );
   opacity: 0;
-  transition: opacity 180ms ease-out;
+  transition: opacity var(--motion-fast) var(--ease-standard);
   pointer-events: none;
 }
 
 .spotlight-card:hover::before {
   opacity: 1;
+}
+
+.motion-premium {
+  transition-duration: var(--motion-base);
+  transition-timing-function: var(--ease-standard);
+}
+
+.magnetic-wrap .magnetic-content {
+  transition: transform var(--motion-fast) var(--ease-ios);
+  will-change: transform;
+}
+
+.hero-sequence .hero-stage {
+  opacity: 0;
+  transform: translate3d(0, 16px, 0) scale(0.985);
+  transition:
+    opacity var(--motion-hero-step) var(--ease-smooth-out),
+    transform var(--motion-hero-step) var(--ease-ios);
+}
+
+.hero-sequence.is-ready .hero-stage {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+.hero-sequence.is-ready .hero-stage-2 {
+  transition-delay: 70ms;
+}
+
+.hero-sequence.is-ready .hero-stage-3 {
+  transition-delay: 120ms;
+}
+
+.hero-sequence.is-ready .hero-stage-4 {
+  transition-delay: 170ms;
+}
+
+.hero-sequence.is-ready .hero-stage-5 {
+  transition-delay: 240ms;
+}
+
+.hero-sequence.is-ready .hero-stage-6 {
+  transition-delay: 300ms;
 }
 
 .spec-pulse {
