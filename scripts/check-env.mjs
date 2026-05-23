@@ -19,14 +19,22 @@ function getSupabaseBrowserKeyCheck(value) {
   if (!value) {
     return {
       ok: false,
-      detail: 'missing; add the Supabase anon/public or publishable key to call deployed Edge Functions',
+      detail: 'missing; add the legacy Supabase anon JWT key to call deployed Edge Functions',
+    };
+  }
+
+  if (value.startsWith('sb_publishable_')) {
+    return {
+      ok: false,
+      detail:
+        'publishable keys are browser-safe, but this Edge Function has JWT verification enabled; use the legacy anon JWT key',
     };
   }
 
   if (value.startsWith('sb_secret_')) {
     return {
       ok: false,
-      detail: 'looks like a Supabase secret key; use the anon/public or publishable key for VITE_SUPABASE_ANON_KEY',
+      detail: 'looks like a Supabase secret key; use the legacy anon JWT key for VITE_SUPABASE_ANON_KEY',
     };
   }
 
@@ -47,7 +55,7 @@ function getSupabaseBrowserKeyCheck(value) {
 
   return {
     ok: true,
-    detail: role === 'anon' ? 'set as anon browser key' : 'set for browser Edge Function calls',
+    detail: role === 'anon' ? 'set as legacy anon JWT browser key' : 'set for browser Edge Function calls',
   };
 }
 
@@ -109,5 +117,5 @@ for (const check of checks) {
 }
 
 console.log('');
-console.log('Reminder: use the Supabase anon/public or publishable key in VITE_SUPABASE_ANON_KEY.');
-console.log('Never put service_role, sb_secret_, or GEMINI_API_KEY values in browser-facing VITE_ variables.');
+console.log('Reminder: this Edge Function has JWT verification enabled, so VITE_SUPABASE_ANON_KEY should be the legacy anon JWT key.');
+console.log('Never put service_role, sb_secret_, sb_publishable_, or GEMINI_API_KEY values in browser-facing VITE_ variables for this setup.');

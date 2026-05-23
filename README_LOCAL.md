@@ -85,7 +85,7 @@ Provider behavior:
 
 The connected Supabase project is `https://bjtfnlvceaopvgoovflm.supabase.co`, and the deployed function is available at `https://bjtfnlvceaopvgoovflm.supabase.co/functions/v1/interview-turn` with JWT verification enabled.
 
-For `VITE_SUPABASE_ANON_KEY`, use the Supabase anon/public key or publishable key only. Do not use `service_role`, `sb_secret_`, or any other Supabase secret key in Vercel or browser-facing env vars.
+For `VITE_SUPABASE_ANON_KEY`, use the legacy Supabase `anon` JWT key because this Edge Function has JWT verification enabled. Do not use `service_role`, `sb_secret_`, `sb_publishable_`, or any other Supabase secret key in Vercel or browser-facing env vars for this setup.
 
 Manual stub test:
 

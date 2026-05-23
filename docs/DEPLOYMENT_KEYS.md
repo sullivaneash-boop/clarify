@@ -29,7 +29,9 @@ VITE_SUPABASE_URL=https://bjtfnlvceaopvgoovflm.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-Use the Supabase anon/public key or publishable key for `VITE_SUPABASE_ANON_KEY`. Do not use the `service_role` key or any Supabase secret key here; Vite exposes `VITE_` variables to the browser.
+Use the legacy Supabase `anon` JWT key for `VITE_SUPABASE_ANON_KEY`. The deployed Edge Function has JWT verification enabled, and Supabase currently verifies Edge Functions with the legacy JWT-based `anon` or `service_role` keys. Do not use the `service_role` key or any Supabase secret key here; Vite exposes `VITE_` variables to the browser.
+
+Do not use an `sb_publishable_` key for this specific Edge Function unless you intentionally redeploy with JWT verification disabled and add your own authorization check inside the function.
 
 The app only calls the deployed `interview-turn` Edge Function when both values are present. If either is missing, Clarify uses the local deterministic stub provider.
 
@@ -65,7 +67,7 @@ VITE_SUPABASE_URL=https://bjtfnlvceaopvgoovflm.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-Do not add `GEMINI_API_KEY`, a Supabase `service_role` key, or any Supabase secret key to Vercel for this frontend project. Gemini should be set on Supabase Edge Function secrets only.
+Do not add `GEMINI_API_KEY`, a Supabase `service_role` key, an `sb_secret_` key, or any other Supabase secret key to Vercel for this frontend project. Gemini should be set on Supabase Edge Function secrets only.
 
 Recommended Vercel settings:
 
