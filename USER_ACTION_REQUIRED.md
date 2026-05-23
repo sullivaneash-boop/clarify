@@ -1,6 +1,6 @@
 # USER ACTION REQUIRED
 
-Date/time: 2026-05-22 22:11:04 EDT
+Date/time: 2026-05-22 22:12:52 EDT
 
 ## Required user action
 
@@ -10,11 +10,13 @@ The interview flow defaults to the deterministic stub provider when Supabase Edg
 
 To call the Supabase `interview-turn` Edge Function from the browser, add the Supabase anon key to `.env.local` as `VITE_SUPABASE_ANON_KEY`. The Supabase project URL has been set to `https://bjtfnlvceaopvgoovflm.supabase.co`.
 
+Run `npm run env:check` after adding keys.
+
 ## Optional user action
 
 - Provide the Supabase anon key if the browser should call deployed Supabase Edge Functions.
-- Provide a server-side LLM API key later if the deterministic local interview engine should be replaced with model calls.
-- Provide Vercel project setup later if deployment is needed.
+- Provide a Gemini API key as a Supabase Edge Function secret when testing `LLM_PROVIDER=gemini`.
+- Add the Vercel project environment variables when the Vercel project is created.
 - Provide OAuth credentials later if real authentication is added.
 - Provide a billing provider account later if paid plans are added.
 
@@ -52,6 +54,23 @@ To run locally with the stub provider, leave `VITE_SUPABASE_URL` and `VITE_SUPAB
 Warning: Gemini free or unpaid tiers may use prompts and responses to improve Google products. Do not test with real customer data, private business ideas, sensitive plans, or confidential information on the free tier.
 
 For production, move to paid Gemini, Vertex AI, or another privacy-safe provider before real users enter private business information.
+
+## Vercel setup
+
+When creating the Vercel project, use:
+
+```bash
+VITE_SUPABASE_URL=https://bjtfnlvceaopvgoovflm.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+Do not add `GEMINI_API_KEY` to Vercel. Gemini belongs in Supabase secrets only.
+
+Recommended Vercel settings:
+
+- Framework preset: Vite
+- Build command: `npm run build`
+- Output directory: `dist`
 
 ## Secrets/API keys not collected
 

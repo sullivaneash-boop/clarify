@@ -96,6 +96,14 @@ Manual Gemini test:
 3. Repeat the same message.
 4. Expect a valid JSON patch, no frontend exposure of the Gemini key, and one next question.
 
+See [docs/DEPLOYMENT_KEYS.md](docs/DEPLOYMENT_KEYS.md) for Supabase secrets, Vercel env vars, and Gemini setup.
+
+To check local readiness:
+
+```bash
+npm run env:check
+```
+
 ## What To Wire Up Next
 
 - Use the `interview-turn` Edge Function for provider-backed extraction and question phrasing.
