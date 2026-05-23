@@ -76,6 +76,7 @@ function parseEnv(path) {
 }
 
 const env = parseEnv(envPath);
+const providerName = env.LLM_PROVIDER || 'stub';
 const supabaseBrowserKeyCheck = getSupabaseBrowserKeyCheck(env.VITE_SUPABASE_ANON_KEY);
 const checks = [
   {
@@ -90,21 +91,27 @@ const checks = [
     ...supabaseBrowserKeyCheck,
   },
   {
-    label: 'GEMINI_API_KEY',
-    ok: Boolean(env.GEMINI_API_KEY),
-    detail: env.GEMINI_API_KEY
+    label: 'DEEPSEEK_API_KEY',
+    ok: providerName !== 'deepseek' || Boolean(env.DEEPSEEK_API_KEY),
+    detail: env.DEEPSEEK_API_KEY
       ? 'present locally; still set it as a Supabase secret for deployed functions'
-      : 'missing locally; set as a Supabase secret before using LLM_PROVIDER=gemini',
+      : providerName === 'deepseek'
+        ? 'missing locally; set as a Supabase secret before using LLM_PROVIDER=deepseek'
+        : 'not required unless LLM_PROVIDER=deepseek',
   },
   {
-    label: 'GEMINI_MODEL',
-    ok: env.GEMINI_MODEL === 'gemini-2.5-flash',
-    detail: env.GEMINI_MODEL || 'missing; default should be gemini-2.5-flash',
+    label: 'DEEPSEEK_MODEL',
+    ok: providerName !== 'deepseek' || env.DEEPSEEK_MODEL === 'deepseek-v4-flash',
+    detail: env.DEEPSEEK_MODEL
+      ? env.DEEPSEEK_MODEL
+      : providerName === 'deepseek'
+        ? 'missing; default should be deepseek-v4-flash'
+        : 'not required unless LLM_PROVIDER=deepseek',
   },
   {
     label: 'LLM_PROVIDER',
-    ok: ['stub', 'gemini'].includes(env.LLM_PROVIDER ?? ''),
-    detail: env.LLM_PROVIDER || 'missing; use stub or gemini',
+    ok: ['stub', 'deepseek'].includes(providerName),
+    detail: providerName || 'missing; use stub or deepseek',
   },
 ];
 
@@ -118,4 +125,4 @@ for (const check of checks) {
 
 console.log('');
 console.log('Reminder: this Edge Function has JWT verification enabled, so VITE_SUPABASE_ANON_KEY should be the legacy anon JWT key.');
-console.log('Never put service_role, sb_secret_, sb_publishable_, or GEMINI_API_KEY values in browser-facing VITE_ variables for this setup.');
+console.log('Never put service_role, sb_secret_, sb_publishable_, DEEPSEEK_API_KEY, or GEMINI_API_KEY values in browser-facing VITE_ variables for this setup.');

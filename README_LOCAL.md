@@ -79,9 +79,9 @@ Provider behavior:
 
 - No `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`: browser uses the deterministic stub provider locally.
 - Supabase configured with `LLM_PROVIDER=stub`: browser calls the `interview-turn` Edge Function, which uses the server stub.
-- Supabase configured with `LLM_PROVIDER=gemini` and `GEMINI_API_KEY`: Edge Function uses Gemini 2.5 Flash.
+- Supabase configured with `LLM_PROVIDER=deepseek` and `DEEPSEEK_API_KEY`: Edge Function uses DeepSeek.
 
-`GEMINI_API_KEY` must only be set as a server-side Supabase secret. Never expose it with a `VITE_` prefix.
+`DEEPSEEK_API_KEY` must only be set as a server-side Supabase secret. Never expose it with a `VITE_` prefix.
 
 The connected Supabase project is `https://bjtfnlvceaopvgoovflm.supabase.co`, and the deployed function is available at `https://bjtfnlvceaopvgoovflm.supabase.co/functions/v1/interview-turn` with JWT verification enabled.
 
@@ -93,14 +93,14 @@ Manual stub test:
 2. Send: `I need a client portal for my detailing business where customers can request services.`
 3. Expect the spec to infer a client portal or business-system shape, detailing business context, customers as primary users, service requests as the goal, and a follow-up question for missing output type or remaining detail.
 
-Manual Gemini test:
+Manual DeepSeek test:
 
-1. Set `GEMINI_API_KEY` and `LLM_PROVIDER=gemini` in Supabase secrets.
+1. Set `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL=deepseek-v4-flash`, and `LLM_PROVIDER=deepseek` in Supabase secrets.
 2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for the frontend.
 3. Repeat the same message.
-4. Expect a valid JSON patch, no frontend exposure of the Gemini key, and one next question.
+4. Expect a valid JSON patch, no frontend exposure of the DeepSeek key, and one next question.
 
-See [docs/DEPLOYMENT_KEYS.md](docs/DEPLOYMENT_KEYS.md) for Supabase secrets, Vercel env vars, and Gemini setup.
+See [docs/DEPLOYMENT_KEYS.md](docs/DEPLOYMENT_KEYS.md) for Supabase secrets, Vercel env vars, and DeepSeek setup.
 
 To check local readiness:
 

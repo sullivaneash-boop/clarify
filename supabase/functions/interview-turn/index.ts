@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders, jsonResponse } from '../_shared/cors.ts';
+import { callDeepSeekJson } from '../_shared/deepseek.ts';
 import { callGeminiJson } from '../_shared/gemini.ts';
 import {
   buildSpecSchema,
@@ -156,7 +157,7 @@ Never decide app flow.
 Return JSON only.`;
 }
 
-function geminiExtractPrompt(input: {
+function llmExtractPrompt(input: {
   currentSpec: BuildSpec;
   latestUserMessage: string;
   recentMessages: InterviewMessage[];
@@ -182,7 +183,7 @@ Latest user message:
 ${input.latestUserMessage}`;
 }
 
-function geminiQuestionPrompt(input: {
+function llmQuestionPrompt(input: {
   currentSpec: BuildSpec;
   readiness: ReadinessAssessment;
   missingFields: string[];
@@ -219,7 +220,7 @@ Recent messages:
 ${JSON.stringify(input.recentMessages.slice(-6), null, 2)}`;
 }
 
-function geminiSummaryPrompt(input: {
+function llmSummaryPrompt(input: {
   currentSpec: BuildSpec;
   readiness: ReadinessAssessment;
   assumptions: string[];
@@ -265,7 +266,7 @@ class GeminiProvider implements Provider {
     return callGeminiJson({
       apiKey: this.apiKey,
       model: this.model,
-      prompt: geminiExtractPrompt(input),
+      prompt: llmExtractPrompt(input),
       schema: specPatchSchema,
       operationName: 'extractSpecUpdates',
     });
@@ -281,7 +282,7 @@ class GeminiProvider implements Provider {
     return callGeminiJson({
       apiKey: this.apiKey,
       model: this.model,
-      prompt: geminiQuestionPrompt(input),
+      prompt: llmQuestionPrompt(input),
       schema: nextQuestionResponseSchema,
       operationName: 'proposeNextQuestion',
     });
@@ -295,7 +296,63 @@ class GeminiProvider implements Provider {
     return callGeminiJson({
       apiKey: this.apiKey,
       model: this.model,
-      prompt: geminiSummaryPrompt(input),
+      prompt: llmSummaryPrompt(input),
+      schema: readinessSummaryResponseSchema,
+      operationName: 'summarizeReadiness',
+    });
+  }
+}
+
+class DeepSeekProvider implements Provider {
+  name = 'deepseek';
+  private apiKey: string;
+  private model: string;
+
+  constructor(apiKey: string, model: string) {
+    if (!apiKey) throw new Error('DEEPSEEK_API_KEY is required when LLM_PROVIDER=deepseek.');
+    this.apiKey = apiKey;
+    this.model = model;
+  }
+
+  async extractSpecUpdates(input: {
+    currentSpec: BuildSpec;
+    latestUserMessage: string;
+    recentMessages: InterviewMessage[];
+  }): Promise<SpecPatch> {
+    return callDeepSeekJson({
+      apiKey: this.apiKey,
+      model: this.model,
+      prompt: llmExtractPrompt(input),
+      schema: specPatchSchema,
+      operationName: 'extractSpecUpdates',
+    });
+  }
+
+  async proposeNextQuestion(input: {
+    currentSpec: BuildSpec;
+    readiness: ReadinessAssessment;
+    missingFields: string[];
+    openQuestions: string[];
+    recentMessages: InterviewMessage[];
+  }): Promise<NextQuestionResponse> {
+    return callDeepSeekJson({
+      apiKey: this.apiKey,
+      model: this.model,
+      prompt: llmQuestionPrompt(input),
+      schema: nextQuestionResponseSchema,
+      operationName: 'proposeNextQuestion',
+    });
+  }
+
+  async summarizeReadiness(input: {
+    currentSpec: BuildSpec;
+    readiness: ReadinessAssessment;
+    assumptions: string[];
+  }): Promise<ReadinessSummaryResponse> {
+    return callDeepSeekJson({
+      apiKey: this.apiKey,
+      model: this.model,
+      prompt: llmSummaryPrompt(input),
       schema: readinessSummaryResponseSchema,
       operationName: 'summarizeReadiness',
     });
@@ -304,6 +361,12 @@ class GeminiProvider implements Provider {
 
 function resolveProvider(): Provider {
   const providerName = Deno.env.get('LLM_PROVIDER') ?? 'stub';
+  if (providerName === 'deepseek') {
+    return new DeepSeekProvider(
+      Deno.env.get('DEEPSEEK_API_KEY') ?? '',
+      Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-v4-flash',
+    );
+  }
   if (providerName === 'gemini') {
     return new GeminiProvider(
       Deno.env.get('GEMINI_API_KEY') ?? '',

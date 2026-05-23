@@ -112,7 +112,7 @@ Scratch seeds open the workspace with:
 
 1. Run the stateless `supabase/functions/interview-turn` Edge Function.
 2. Keep the existing `SpecPatch` contract so UI state does not change.
-3. Set `LLM_PROVIDER=stub` for no-key server testing or `LLM_PROVIDER=gemini` with `GEMINI_API_KEY` for Gemini 2.5 Flash.
+3. Set `LLM_PROVIDER=stub` for no-key server testing or `LLM_PROVIDER=deepseek` with `DEEPSEEK_API_KEY` for DeepSeek.
 4. Store specs, messages, patches, build jobs, and artifacts in Supabase or another database after the stateless flow is proven.
 5. Add auth/project ownership only after the local workflow is validated.
 6. Replace simulated build packaging with real code generation or workflow execution behind the existing artifact boundary.
@@ -127,24 +127,25 @@ The provider interface lives in `src/lib/llm/provider.ts` and supports only:
 
 The provider does not own app state, readiness, stopping rules, or phase transitions.
 
-Schemas live in `src/lib/llm/schemas.ts` and are validated with Zod. Gemini output is parsed as JSON and validated before it can affect state.
+Schemas live in `src/lib/llm/schemas.ts` and are validated with Zod. DeepSeek output is parsed as JSON and validated before it can affect state.
 
 Providers:
 
 - `src/lib/llm/stub-provider.ts`: deterministic heuristics, no key required.
-- `src/lib/llm/gemini-provider.ts`: Gemini 2.5 Flash wrapper for server-side use.
+- `src/lib/llm/deepseek-provider.ts`: DeepSeek wrapper for server-side use.
+- `src/lib/llm/gemini-provider.ts`: legacy Gemini wrapper retained for fallback experiments.
 - `supabase/functions/interview-turn/index.ts`: stateless Edge Function that resolves `LLM_PROVIDER`, applies patches, runs deterministic readiness, and returns the next phase.
 
 Frontend behavior:
 
 - If `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are present, `src/lib/interview/api.ts` calls the Edge Function.
 - If either is missing, the browser uses the deterministic stub locally through the same response contract.
-- `GEMINI_API_KEY` is never read by frontend code and must not use a `VITE_` prefix.
+- `DEEPSEEK_API_KEY` is never read by frontend code and must not use a `VITE_` prefix.
 
 Manual provider test:
 
 - Stub: send `I need a client portal for my detailing business where customers can request services.` Expect a structured patch and a question for missing output type or remaining required detail.
-- Gemini: set Supabase secrets `LLM_PROVIDER=gemini`, `GEMINI_MODEL=gemini-2.5-flash`, and `GEMINI_API_KEY`, then repeat the same message. Expect valid JSON output and no browser-visible Gemini key.
+- DeepSeek: set Supabase secrets `LLM_PROVIDER=deepseek`, `DEEPSEEK_MODEL=deepseek-v4-flash`, and `DEEPSEEK_API_KEY`, then repeat the same message. Expect valid JSON output and no browser-visible DeepSeek key.
 
 ## Known Limitations
 
