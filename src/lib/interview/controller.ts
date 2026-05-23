@@ -1,7 +1,7 @@
 import { createId } from '../utils/ids';
 import { assessSpec } from './assess';
 import { extractSpecPatch } from './extract';
-import { applyPatch, uniquePaths } from './patches';
+import { uniquePaths } from './patches';
 import { phraseNextQuestion } from './phrase';
 import type { Assessment, BuildSpec, InterviewPhase, SpecPatch } from './schema';
 import type { InterviewMessage } from './schema';
@@ -11,6 +11,7 @@ import {
   type InterviewTurnResponse,
 } from '../llm/schemas';
 import { assessReadiness, canConfirm } from './readiness';
+import { runSpecGovernor } from './governor/apply';
 
 export type ControllerResult = {
   spec: BuildSpec;
@@ -28,10 +29,14 @@ export function processUserTurn(
   mode: 'interview' | 'iteration' = 'interview',
 ): ControllerResult {
   const patch = extractSpecPatch(userInput, spec, { sourceMessageId, mode });
-  const applied = applyPatch(spec, patch);
-  const assessment = assessSpec(applied.spec);
+  const governed = runSpecGovernor(spec, patch, {
+    source: 'user_explicit',
+    sourceMessageId,
+    evidenceFallback: userInput,
+  });
+  const assessment = assessSpec(governed.spec);
   const nextSpec: BuildSpec = {
-    ...applied.spec,
+    ...governed.spec,
     openQuestions: assessment.openQuestions,
     readiness: assessment.readiness,
     updatedAt: new Date().toISOString(),
@@ -45,7 +50,11 @@ export function processUserTurn(
     assessment,
     assistantContent: phrased.content,
     nextPhase,
-    changedPaths: uniquePaths([...applied.changedPaths, '/readiness', '/openQuestions']),
+    changedPaths: uniquePaths([
+      ...governed.decisions.flatMap((decision) => [decision.operation.path, decision.appliedPath ?? decision.operation.path]),
+      '/readiness',
+      '/openQuestions',
+    ]),
   };
 }
 
@@ -59,9 +68,23 @@ export type InterviewTurnControllerInput = {
   maxTurns?: number;
 };
 
-function formatQuestion(response: { question: string; rationale?: string | null }) {
-  if (!response.rationale) return response.question;
-  return `${response.question}\n\n${response.rationale}`;
+function fallbackPatch(reason: string) {
+  return {
+    operations: [],
+    summary: `Provider output was not usable, so Clarify kept the current spec and continued deterministically. ${reason}`,
+  };
+}
+
+function fallbackSummary(spec: BuildSpec, assumptions: string[]) {
+  const excluded =
+    spec.mustNotDo.length > 0
+      ? spec.mustNotDo.join(', ')
+      : 'paid services, secrets, real auth, billing, and production integrations';
+  const assumptionText = assumptions.length > 0 ? assumptions.join(', ') : 'no extra assumptions beyond the current spec';
+
+  return `Here is the build plan: a ${spec.buildType.replace(/_/g, ' ')} for ${
+    spec.primaryUser ?? 'the primary user'
+  } that helps with ${spec.mainGoal ?? 'the main outcome'}. This first version will not include ${excluded}. Assumptions: ${assumptionText}. The main tradeoff is keeping the first package specific enough to build without adding production services yet.`;
 }
 
 export async function processInterviewTurn({
@@ -72,44 +95,48 @@ export async function processInterviewTurn({
   turnCount = recentMessages.filter((item) => item.role === 'user').length,
   maxTurns = 10,
 }: InterviewTurnControllerInput): Promise<InterviewTurnResponse> {
-  const specPatch = await provider.extractSpecUpdates({
-    currentSpec,
-    latestUserMessage: message,
-    recentMessages,
+  const specPatch = await provider
+    .extractSpecUpdates({
+      currentSpec,
+      latestUserMessage: message,
+      recentMessages,
+    })
+    .catch((error: unknown) =>
+      fallbackPatch(error instanceof Error ? error.message : 'Unknown provider extraction error.'),
+    );
+  const governed = runSpecGovernor(currentSpec, specPatch, {
+    source: 'model_inferred',
+    sourceMessageId: [...recentMessages].reverse().find((item) => item.role === 'user')?.id ?? 'provider-turn',
+    evidenceFallback: message,
   });
-  const applied = applyPatch(currentSpec, specPatch);
-  const readiness = assessReadiness(applied.spec, { turnCount, maxTurns });
+  const readiness = assessReadiness(governed.spec, { turnCount, maxTurns });
+  const hardBlockers = governed.readiness.hardBlockers;
   const updatedSpec: BuildSpec = {
-    ...applied.spec,
+    ...governed.spec,
     readiness: {
-      score: readiness.score,
-      requiredFieldsComplete: readiness.requiredFieldsComplete,
-      reason: readiness.reason,
+      score: governed.readiness.score,
+      requiredFieldsComplete: readiness.requiredFieldsComplete && hardBlockers.length === 0,
+      reason: hardBlockers[0] ?? readiness.reason,
     },
-    openQuestions: readiness.openQuestions,
+    openQuestions: governed.nextQuestion ? [governed.nextQuestion] : readiness.openQuestions,
     updatedAt: new Date().toISOString(),
   };
 
   let content: string;
   let nextPhase: 'interview' | 'confirm' = 'interview';
 
-  if (canConfirm(readiness)) {
-    const summary = await provider.summarizeReadiness({
-      currentSpec: updatedSpec,
-      readiness,
-      assumptions: updatedSpec.assumptions,
-    });
+  if (canConfirm(readiness) && (governed.readiness.status === 'ready' || governed.readiness.status === 'ready_with_assumptions')) {
+    const summary = await provider
+      .summarizeReadiness({
+        currentSpec: updatedSpec,
+        readiness,
+        assumptions: updatedSpec.assumptions,
+      })
+      .catch(() => ({ summary: fallbackSummary(updatedSpec, updatedSpec.assumptions) }));
     content = summary.summary;
     nextPhase = 'confirm';
   } else {
-    const question = await provider.proposeNextQuestion({
-      currentSpec: updatedSpec,
-      readiness,
-      missingFields: readiness.missingFields,
-      openQuestions: readiness.openQuestions,
-      recentMessages,
-    });
-    content = formatQuestion(question);
+    content = governed.nextQuestion ?? readiness.openQuestions[0] ?? 'What decision would most change the first version?';
   }
 
   return interviewTurnResponseSchema.parse({
@@ -120,7 +147,14 @@ export async function processInterviewTurn({
     },
     specPatch,
     updatedSpec,
-    readiness,
+    readiness: {
+      ...readiness,
+      score: governed.readiness.score,
+      requiredFieldsComplete: readiness.requiredFieldsComplete && hardBlockers.length === 0,
+      reason: hardBlockers[0] ?? readiness.reason,
+      openQuestions: updatedSpec.openQuestions,
+      blockingOpenQuestions: hardBlockers,
+    },
     nextPhase,
     provider: provider.name,
   });

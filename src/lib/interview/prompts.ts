@@ -29,6 +29,9 @@ Rules:
 - Do not overwrite existing fields unless the user explicitly corrects them.
 - Use confidence between 0 and 1.
 - Use root JSON pointer paths like "/buildType", "/primaryUser", "/mainGoal", "/outputType".
+- For "/buildType", value must be one of: "business_system", "website", "spreadsheet", "automation", "client_portal", "landing_page", "unknown".
+- For "/outputType", value must be one of: "implementation_plan", "build_prompt", "prototype", "spreadsheet", "code_files".
+- Do not put product categories like "client portal" or "internal dashboard" in "/outputType"; those belong in "/buildType" if clearly supported.
 - Output JSON matching this shape only:
 {
   "operations": [

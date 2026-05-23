@@ -3,13 +3,16 @@ import { corsHeaders, jsonResponse } from '../_shared/cors.ts';
 import { callDeepSeekJson } from '../_shared/deepseek.ts';
 import { callGeminiJson } from '../_shared/gemini.ts';
 import {
+  buildTypeSchema,
   buildSpecSchema,
   interviewTurnRequestSchema,
   interviewTurnResponseSchema,
   nextQuestionResponseSchema,
+  outputTypeSchema,
   readinessSummaryResponseSchema,
   specPatchSchema,
   type BuildSpec,
+  type FieldSource,
   type InterviewMessage,
   type NextQuestionResponse,
   type ReadinessAssessment,
@@ -172,6 +175,9 @@ Rules:
 - Never invent values.
 - Do not overwrite existing fields unless the user explicitly corrects them.
 - Use confidence between 0 and 1.
+- For "/buildType", value must be one of: "business_system", "website", "spreadsheet", "automation", "client_portal", "landing_page", "unknown".
+- For "/outputType", value must be one of: "implementation_plan", "build_prompt", "prototype", "spreadsheet", "code_files".
+- Do not put product categories like "client portal" or "internal dashboard" in "/outputType"; those belong in "/buildType" if clearly supported.
 
 Current spec:
 ${JSON.stringify(input.currentSpec, null, 2)}
@@ -382,6 +388,97 @@ function normalizeListValue(value: unknown) {
   return [String(value)];
 }
 
+function inferBuildTypeFromText(text: string): BuildSpec['buildType'] | undefined {
+  if (text.includes('portal')) return 'client_portal';
+  if (text.includes('spreadsheet') || text.includes('sheet') || text.includes('excel')) return 'spreadsheet';
+  if (text.includes('automation') || text.includes('workflow')) return 'automation';
+  if (text.includes('landing')) return 'landing_page';
+  if (text.includes('website') || text.includes('site')) return 'website';
+  if (text.includes('dashboard') || text.includes('internal') || text.includes('system') || text.includes('app')) {
+    return 'business_system';
+  }
+  return undefined;
+}
+
+function inferOutputTypeFromText(text: string): BuildSpec['outputType'] | undefined {
+  if (text.includes('prototype')) return 'prototype';
+  if (text.includes('prompt')) return 'build_prompt';
+  if (text.includes('spreadsheet')) return 'spreadsheet';
+  if (text.includes('code')) return 'code_files';
+  if (text.includes('package') || text.includes('plan')) return 'implementation_plan';
+  return undefined;
+}
+
+const sourceAuthority: Record<FieldSource, number> = {
+  system_default: 1,
+  model_inferred: 2,
+  imported_context: 3,
+  user_explicit: 4,
+  user_confirmed: 5,
+};
+
+function sameValue(a: unknown, b: unknown) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function hasValue(value: unknown) {
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== null && value !== undefined && value !== '';
+}
+
+function normalizeEnumField(key: keyof BuildSpec, value: unknown) {
+  if (value === null || value === undefined || value === '') {
+    return key === 'outputType' ? null : value;
+  }
+
+  if (key !== 'buildType' && key !== 'outputType') return value;
+
+  const normalized = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s/]+/g, '_');
+  const text = String(value).trim().toLowerCase();
+
+  if (key === 'buildType') {
+    const aliases: Record<string, BuildSpec['buildType']> = {
+      app: 'business_system',
+      business_system: 'business_system',
+      client_area: 'client_portal',
+      client_dashboard: 'client_portal',
+      client_portal: 'client_portal',
+      customer_portal: 'client_portal',
+      dashboard: 'business_system',
+      internal_dashboard: 'business_system',
+      internal_system: 'business_system',
+      landing_page: 'landing_page',
+      portal: 'client_portal',
+      site: 'website',
+      web_app: 'business_system',
+    };
+    const candidate = aliases[normalized] ?? normalized;
+    const parsed = buildTypeSchema.safeParse(candidate);
+    return parsed.success ? parsed.data : inferBuildTypeFromText(text);
+  }
+
+  const aliases: Record<string, BuildSpec['outputType']> = {
+    build_package: 'implementation_plan',
+    build_plan: 'implementation_plan',
+    build_prompt: 'build_prompt',
+    code: 'code_files',
+    code_files: 'code_files',
+    implementation_plan: 'implementation_plan',
+    plan: 'implementation_plan',
+    prompt: 'build_prompt',
+    prototype: 'prototype',
+    spreadsheet: 'spreadsheet',
+    spreadsheet_plan: 'spreadsheet',
+    working_prototype: 'prototype',
+  };
+  const candidate = aliases[normalized] ?? normalized;
+  const parsed = outputTypeSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : inferOutputTypeFromText(text);
+}
+
 function applySpecPatch(currentSpec: BuildSpec, patch: SpecPatch) {
   const next: BuildSpec = {
     ...currentSpec,
@@ -395,12 +492,17 @@ function applySpecPatch(currentSpec: BuildSpec, patch: SpecPatch) {
     assumptions: [...currentSpec.assumptions],
     openQuestions: [...currentSpec.openQuestions],
     readiness: { ...currentSpec.readiness },
+    fieldMetadata: { ...(currentSpec.fieldMetadata ?? {}) },
+    conflicts: [...(currentSpec.conflicts ?? [])],
+    assumptionLedger: [...(currentSpec.assumptionLedger ?? [])],
   };
 
   for (const operation of patch.operations) {
     const key = operation.path.replace(/^\//, '') as keyof BuildSpec;
     if (!(key in next)) continue;
     const previous = next[key];
+    const source: FieldSource = 'model_inferred';
+    const path = operation.path;
 
     if (operation.op === 'append') {
       if (!Array.isArray(previous)) continue;
@@ -420,8 +522,42 @@ function applySpecPatch(currentSpec: BuildSpec, patch: SpecPatch) {
       continue;
     }
 
+    const normalizedValue = normalizeEnumField(key, operation.value);
+    if (normalizedValue === undefined) continue;
+    const metadata = next.fieldMetadata?.[path];
+    const previousSource = metadata?.source ?? (hasValue(previous) ? 'system_default' : source);
+
+    if (sourceAuthority[source] < sourceAuthority[previousSource] && hasValue(previous) && !sameValue(previous, normalizedValue)) {
+      next.conflicts = [
+        ...(next.conflicts ?? []),
+        {
+          id: `conflict_${operation.sourceMessageId ?? Date.now()}_${String(key)}`,
+          path,
+          existingValue: previous,
+          incomingValue: normalizedValue,
+          existingSource: previousSource,
+          incomingSource: source,
+          evidence: operation.evidence ?? [],
+          sourceMessageId: operation.sourceMessageId,
+          status: 'unresolved',
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      continue;
+    }
+
     if (operation.op === 'replace' || previous === null || previous === undefined || operation.confidence >= 0.82) {
-      (next[key] as typeof operation.value) = operation.value;
+      (next[key] as typeof normalizedValue) = normalizedValue;
+      next.fieldMetadata = {
+        ...(next.fieldMetadata ?? {}),
+        [path]: {
+          source,
+          confidence: operation.confidence,
+          evidence: operation.evidence ?? [],
+          sourceMessageId: operation.sourceMessageId,
+          updatedAt: new Date().toISOString(),
+        },
+      };
     }
   }
 
@@ -495,9 +631,51 @@ function canConfirm(readiness: ReadinessAssessment) {
   return readiness.requiredFieldsComplete && readiness.score >= 75 && readiness.blockingOpenQuestions.length === 0;
 }
 
+function governorStatus(readiness: ReadinessAssessment, spec: BuildSpec) {
+  const conflictBlockers = (spec.conflicts ?? [])
+    .filter((conflict) => conflict.status === 'unresolved')
+    .map((conflict) => `Conflict on ${conflict.path} must be resolved before build.`);
+  const hardBlockers = [...readiness.blockingOpenQuestions, ...conflictBlockers];
+  const status = hardBlockers.length > 0
+    ? 'blocked'
+    : readiness.score >= 85
+      ? 'ready'
+      : readiness.score >= 75
+        ? 'ready_with_assumptions'
+        : 'needs_interview';
+
+  return {
+    score: readiness.score,
+    status,
+    hardBlockers,
+    softGaps: readiness.missingFields.length === 0 ? [] : readiness.missingFields.map((field) => `${field} may need a safe default.`),
+    assumptions: spec.assumptionLedger ?? [],
+    recommendedOutput: spec.outputType,
+  };
+}
+
 function formatQuestion(response: NextQuestionResponse) {
   if (!response.rationale) return response.question;
   return `${response.question}\n\n${response.rationale}`;
+}
+
+function fallbackPatch(reason: string): SpecPatch {
+  return {
+    operations: [],
+    summary: `Provider output was not usable, so Clarify kept the current spec and continued deterministically. ${reason}`,
+  };
+}
+
+function fallbackSummary(spec: BuildSpec, assumptions: string[]) {
+  const excluded =
+    spec.mustNotDo.length > 0
+      ? spec.mustNotDo.join(', ')
+      : 'paid services, secrets, real auth, billing, and production integrations';
+  const assumptionText = assumptions.length > 0 ? assumptions.join(', ') : 'no extra assumptions beyond the current spec';
+
+  return `Here is the build plan: a ${spec.buildType.replace(/_/g, ' ')} for ${
+    spec.primaryUser ?? 'the primary user'
+  } that helps with ${spec.mainGoal ?? 'the main outcome'}. This first version will not include ${excluded}. Assumptions: ${assumptionText}. The main tradeoff is keeping the first package specific enough to build without adding production services yet.`;
 }
 
 serve(async (req) => {
@@ -512,11 +690,15 @@ serve(async (req) => {
   try {
     const request = interviewTurnRequestSchema.parse(await req.json());
     const provider = resolveProvider();
-    const specPatch = await provider.extractSpecUpdates({
-      currentSpec: request.currentSpec,
-      latestUserMessage: request.message,
-      recentMessages: request.recentMessages,
-    });
+    const specPatch = await provider
+      .extractSpecUpdates({
+        currentSpec: request.currentSpec,
+        latestUserMessage: request.message,
+        recentMessages: request.recentMessages,
+      })
+      .catch((error: unknown) =>
+        fallbackPatch(error instanceof Error ? error.message : 'Unknown provider extraction error.'),
+      );
     const updatedSpecBase = applySpecPatch(request.currentSpec, specPatch);
     const readiness = assessReadiness(
       updatedSpecBase,
@@ -530,6 +712,7 @@ serve(async (req) => {
         reason: readiness.reason,
       },
       openQuestions: readiness.openQuestions,
+      governorReadiness: governorStatus(readiness, updatedSpecBase),
       updatedAt: new Date().toISOString(),
     });
 
@@ -537,22 +720,28 @@ serve(async (req) => {
     let nextPhase: 'interview' | 'confirm' = 'interview';
 
     if (canConfirm(readiness)) {
-      const summary = await provider.summarizeReadiness({
-        currentSpec: updatedSpec,
-        readiness,
-        assumptions: updatedSpec.assumptions,
-      });
+      const summary = await provider
+        .summarizeReadiness({
+          currentSpec: updatedSpec,
+          readiness,
+          assumptions: updatedSpec.assumptions,
+        })
+        .catch(() => ({ summary: fallbackSummary(updatedSpec, updatedSpec.assumptions) }));
       content = summary.summary;
       nextPhase = 'confirm';
     } else {
       content = formatQuestion(
-        await provider.proposeNextQuestion({
-          currentSpec: updatedSpec,
-          readiness,
-          missingFields: readiness.missingFields,
-          openQuestions: readiness.openQuestions,
-          recentMessages: request.recentMessages,
-        }),
+        await provider
+          .proposeNextQuestion({
+            currentSpec: updatedSpec,
+            readiness,
+            missingFields: readiness.missingFields,
+            openQuestions: readiness.openQuestions,
+            recentMessages: request.recentMessages,
+          })
+          .catch(() => ({
+            question: readiness.openQuestions[0] ?? 'What decision would most change the first version?',
+          })),
       );
     }
 

@@ -18,6 +18,54 @@ export const outputTypeSchema = z.enum([
   'code_files',
 ]);
 
+export const fieldSourceSchema = z.enum([
+  'user_explicit',
+  'user_confirmed',
+  'model_inferred',
+  'system_default',
+  'imported_context',
+]);
+
+export const fieldMetadataSchema = z.object({
+  source: fieldSourceSchema,
+  confidence: z.number().min(0).max(1),
+  evidence: z.array(z.string()),
+  sourceMessageId: z.string().optional(),
+  updatedAt: z.string(),
+});
+
+export const conflictSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  existingValue: z.unknown(),
+  incomingValue: z.unknown(),
+  existingSource: fieldSourceSchema,
+  incomingSource: fieldSourceSchema,
+  evidence: z.array(z.string()),
+  sourceMessageId: z.string().optional(),
+  status: z.enum(['unresolved', 'resolved']),
+  createdAt: z.string(),
+});
+
+export const assumptionRecordSchema = z.object({
+  id: z.string(),
+  statement: z.string(),
+  basis: z.string(),
+  risk: z.enum(['low', 'medium', 'high']),
+  affectsBuild: z.array(z.string()),
+  askBeforeBuild: z.boolean(),
+  createdAt: z.string(),
+});
+
+export const governorReadinessSchema = z.object({
+  score: z.number().min(0).max(100),
+  status: z.enum(['blocked', 'needs_interview', 'ready_with_assumptions', 'ready']),
+  hardBlockers: z.array(z.string()),
+  softGaps: z.array(z.string()),
+  assumptions: z.array(assumptionRecordSchema),
+  recommendedOutput: outputTypeSchema.nullable(),
+});
+
 export const buildSpecSchema = z.object({
   id: z.string().optional(),
   projectName: z.string().nullable(),
@@ -40,6 +88,10 @@ export const buildSpecSchema = z.object({
     requiredFieldsComplete: z.boolean(),
     reason: z.string(),
   }),
+  fieldMetadata: z.record(fieldMetadataSchema).optional(),
+  conflicts: z.array(conflictSchema).optional(),
+  assumptionLedger: z.array(assumptionRecordSchema).optional(),
+  governorReadiness: governorReadinessSchema.optional(),
   updatedAt: z.string(),
 });
 
@@ -57,6 +109,8 @@ export const specPatchOperationSchema = z.object({
   path: z.string(),
   value: z.unknown(),
   confidence: z.number().min(0).max(1),
+  evidence: z.array(z.string()).optional(),
+  sourceMessageId: z.string().optional(),
 });
 
 export const specPatchSchema = z.object({
@@ -108,6 +162,7 @@ export type BuildSpec = z.infer<typeof buildSpecSchema>;
 export type InterviewMessage = z.infer<typeof interviewMessageSchema>;
 export type SpecPatch = z.infer<typeof specPatchSchema>;
 export type SpecPatchOperation = z.infer<typeof specPatchOperationSchema>;
+export type FieldSource = z.infer<typeof fieldSourceSchema>;
 export type ReadinessAssessment = z.infer<typeof readinessAssessmentSchema>;
 export type NextQuestionResponse = z.infer<typeof nextQuestionResponseSchema>;
 export type ReadinessSummaryResponse = z.infer<typeof readinessSummaryResponseSchema>;

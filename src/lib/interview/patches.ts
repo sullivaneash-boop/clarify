@@ -1,4 +1,4 @@
-import { buildSpecSchema, type BuildSpec, type PatchOperation } from './schema';
+import { buildSpecSchema, buildTypeSchema, outputTypeSchema, type BuildSpec, type PatchOperation } from './schema';
 
 export type SpecPatchLike = {
   operations: PatchOperation[];
@@ -30,12 +30,91 @@ function uniqueAppend(existing: string[], incoming: unknown) {
   return next;
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
 function replaceIfAllowed(currentValue: unknown, value: unknown, confidence: number) {
+  if (value === undefined) return currentValue;
   if (currentValue === null || currentValue === undefined || currentValue === '' || confidence >= 0.82) {
     return value;
   }
 
   return currentValue;
+}
+
+function inferBuildTypeFromText(text: string): BuildSpec['buildType'] | undefined {
+  if (text.includes('portal')) return 'client_portal';
+  if (text.includes('spreadsheet') || text.includes('sheet') || text.includes('excel')) return 'spreadsheet';
+  if (text.includes('automation') || text.includes('workflow')) return 'automation';
+  if (text.includes('landing')) return 'landing_page';
+  if (text.includes('website') || text.includes('site')) return 'website';
+  if (text.includes('dashboard') || text.includes('internal') || text.includes('system') || text.includes('app')) {
+    return 'business_system';
+  }
+  return undefined;
+}
+
+function inferOutputTypeFromText(text: string): BuildSpec['outputType'] | undefined {
+  if (text.includes('prototype')) return 'prototype';
+  if (text.includes('prompt')) return 'build_prompt';
+  if (text.includes('spreadsheet')) return 'spreadsheet';
+  if (text.includes('code')) return 'code_files';
+  if (text.includes('package') || text.includes('plan')) return 'implementation_plan';
+  return undefined;
+}
+
+function normalizeEnumField(key: keyof BuildSpec, value: unknown) {
+  if (value === null || value === undefined || value === '') {
+    return key === 'outputType' ? null : value;
+  }
+
+  if (key !== 'buildType' && key !== 'outputType') return value;
+
+  const normalized = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s/]+/g, '_');
+  const text = String(value).trim().toLowerCase();
+
+  if (key === 'buildType') {
+    const aliases: Record<string, BuildSpec['buildType']> = {
+      app: 'business_system',
+      business_system: 'business_system',
+      client_area: 'client_portal',
+      client_dashboard: 'client_portal',
+      client_portal: 'client_portal',
+      customer_portal: 'client_portal',
+      dashboard: 'business_system',
+      internal_dashboard: 'business_system',
+      internal_system: 'business_system',
+      landing_page: 'landing_page',
+      portal: 'client_portal',
+      site: 'website',
+      web_app: 'business_system',
+    };
+    const candidate = aliases[normalized] ?? normalized;
+    const parsed = buildTypeSchema.safeParse(candidate);
+    return parsed.success ? parsed.data : inferBuildTypeFromText(text);
+  }
+
+  const aliases: Record<string, BuildSpec['outputType']> = {
+    build_package: 'implementation_plan',
+    build_plan: 'implementation_plan',
+    build_prompt: 'build_prompt',
+    code: 'code_files',
+    code_files: 'code_files',
+    implementation_plan: 'implementation_plan',
+    plan: 'implementation_plan',
+    prompt: 'build_prompt',
+    prototype: 'prototype',
+    spreadsheet: 'spreadsheet',
+    spreadsheet_plan: 'spreadsheet',
+    working_prototype: 'prototype',
+  };
+  const candidate = aliases[normalized] ?? normalized;
+  const parsed = outputTypeSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : inferOutputTypeFromText(text);
 }
 
 export function applyPatch(spec: BuildSpec, patch: SpecPatchLike) {
@@ -74,7 +153,7 @@ function applyOperation(spec: BuildSpec, operation: PatchOperation) {
   if (!(key in spec)) return false;
 
   if (operation.op === 'append') {
-    if (!Array.isArray(previous)) return false;
+    if (!isStringArray(previous)) return false;
     const nextValue = uniqueAppend(previous, operation.value);
     if (nextValue.length === previous.length) return false;
     (spec[key] as string[]) = nextValue;
@@ -89,6 +168,7 @@ function applyOperation(spec: BuildSpec, operation: PatchOperation) {
       (spec[key] as typeof nextValue) = nextValue;
       return true;
     }
+    if (!isStringArray(previous)) return false;
     const removeValues = new Set(normalizeListValue(operation.value).map((value) => value.toLowerCase()));
     const nextValue = previous.filter((item) => !removeValues.has(String(item).toLowerCase()));
     if (nextValue.length === previous.length) return false;
@@ -98,8 +178,10 @@ function applyOperation(spec: BuildSpec, operation: PatchOperation) {
 
   const nextValue =
     operation.op === 'replace'
-      ? operation.value
-      : replaceIfAllowed(previous, operation.value, operation.confidence);
+      ? normalizeEnumField(key, operation.value)
+      : replaceIfAllowed(previous, normalizeEnumField(key, operation.value), operation.confidence);
+
+  if (nextValue === undefined) return false;
 
   if (Object.is(previous, nextValue)) return false;
 

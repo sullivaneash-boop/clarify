@@ -38,6 +38,54 @@ export const readinessSchema = z.object({
   reason: z.string(),
 });
 
+export const fieldSourceSchema = z.enum([
+  'user_explicit',
+  'user_confirmed',
+  'model_inferred',
+  'system_default',
+  'imported_context',
+]);
+
+export const fieldMetadataSchema = z.object({
+  source: fieldSourceSchema,
+  confidence: z.number().min(0).max(1),
+  evidence: z.array(z.string()),
+  sourceMessageId: z.string().optional(),
+  updatedAt: z.string(),
+});
+
+export const conflictSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  existingValue: z.unknown(),
+  incomingValue: z.unknown(),
+  existingSource: fieldSourceSchema,
+  incomingSource: fieldSourceSchema,
+  evidence: z.array(z.string()),
+  sourceMessageId: z.string().optional(),
+  status: z.enum(['unresolved', 'resolved']),
+  createdAt: z.string(),
+});
+
+export const assumptionRecordSchema = z.object({
+  id: z.string(),
+  statement: z.string(),
+  basis: z.string(),
+  risk: z.enum(['low', 'medium', 'high']),
+  affectsBuild: z.array(z.string()),
+  askBeforeBuild: z.boolean(),
+  createdAt: z.string(),
+});
+
+export const governorReadinessSchema = z.object({
+  score: z.number().min(0).max(100),
+  status: z.enum(['blocked', 'needs_interview', 'ready_with_assumptions', 'ready']),
+  hardBlockers: z.array(z.string()),
+  softGaps: z.array(z.string()),
+  assumptions: z.array(assumptionRecordSchema),
+  recommendedOutput: outputTypeSchema.nullable(),
+});
+
 export const buildSpecSchema = z.object({
   id: z.string(),
   projectName: z.string().nullable(),
@@ -56,6 +104,10 @@ export const buildSpecSchema = z.object({
   assumptions: z.array(z.string()),
   openQuestions: z.array(z.string()),
   readiness: readinessSchema,
+  fieldMetadata: z.record(fieldMetadataSchema).optional(),
+  conflicts: z.array(conflictSchema).optional(),
+  assumptionLedger: z.array(assumptionRecordSchema).optional(),
+  governorReadiness: governorReadinessSchema.optional(),
   updatedAt: z.string(),
 });
 
@@ -64,6 +116,8 @@ export const patchOperationSchema = z.object({
   path: z.string(),
   value: z.unknown(),
   confidence: z.number().min(0).max(1),
+  evidence: z.array(z.string()).optional(),
+  sourceMessageId: z.string().optional(),
 });
 
 export const specPatchSchema = z.object({
@@ -131,6 +185,11 @@ export type MessageRole = z.infer<typeof messageRoleSchema>;
 export type InterviewMessage = z.infer<typeof interviewMessageSchema>;
 export type BuildType = z.infer<typeof buildTypeSchema>;
 export type OutputType = z.infer<typeof outputTypeSchema>;
+export type FieldSource = z.infer<typeof fieldSourceSchema>;
+export type FieldMetadata = z.infer<typeof fieldMetadataSchema>;
+export type SpecConflict = z.infer<typeof conflictSchema>;
+export type AssumptionRecord = z.infer<typeof assumptionRecordSchema>;
+export type GovernorReadiness = z.infer<typeof governorReadinessSchema>;
 export type BuildSpec = z.infer<typeof buildSpecSchema>;
 export type SpecPatch = z.infer<typeof specPatchSchema>;
 export type PatchOperation = z.infer<typeof patchOperationSchema>;
@@ -182,6 +241,22 @@ export function createEmptySpec(): BuildSpec {
       requiredFieldsComplete: false,
       reason: 'Start by describing what you want to build.',
     },
+    fieldMetadata: {
+      '/technicalConstraints': {
+        source: 'system_default',
+        confidence: 1,
+        evidence: ['Local prototype default constraints.'],
+        updatedAt: now,
+      },
+      '/mustNotDo': {
+        source: 'system_default',
+        confidence: 1,
+        evidence: ['Local prototype default exclusions.'],
+        updatedAt: now,
+      },
+    },
+    conflicts: [],
+    assumptionLedger: [],
     updatedAt: now,
   };
 }

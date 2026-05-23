@@ -7,6 +7,19 @@ function list(items: string[], fallback: string) {
   return items.map((item) => `- ${item}`).join('\n');
 }
 
+function assumptionList(spec: BuildSpec) {
+  const ledger = spec.assumptionLedger ?? [];
+  if (ledger.length === 0) return list(spec.assumptions, 'No extra assumptions beyond the locked spec.');
+  return ledger
+    .map(
+      (assumption) =>
+        `- ${assumption.statement} Basis: ${assumption.basis}. Risk: ${assumption.risk}. Affects: ${
+          assumption.affectsBuild.length > 0 ? assumption.affectsBuild.join(', ') : 'general scope'
+        }.`,
+    )
+    .join('\n');
+}
+
 function inline(items: string[], fallback: string) {
   return items.length > 0 ? items.join(', ') : fallback;
 }
@@ -26,6 +39,17 @@ function titleFor(spec: BuildSpec) {
   if (spec.projectName) return `${spec.projectName} build package`;
   if (spec.businessType) return `${spec.businessType} ${toTitle(spec.buildType)} package`;
   return `${toTitle(spec.buildType)} build package`;
+}
+
+function tradeoffs(spec: BuildSpec) {
+  const readiness = spec.governorReadiness;
+  const lines = [
+    `- Output recommendation: ${readiness?.recommendedOutput ?? spec.outputType ?? 'not selected yet'}.`,
+    `- Readiness status: ${readiness?.status ?? (spec.readiness.requiredFieldsComplete ? 'ready' : 'needs_interview')}.`,
+  ];
+  if (readiness?.softGaps.length) lines.push(...readiness.softGaps.map((gap) => `- Soft gap: ${gap}`));
+  if (readiness?.hardBlockers.length) lines.push(...readiness.hardBlockers.map((blocker) => `- Blocker: ${blocker}`));
+  return lines.join('\n');
 }
 
 function virtualSchema(spec: BuildSpec) {
@@ -61,7 +85,10 @@ Ship the smallest useful version as a local-first, testable product surface. The
 ${list(spec.mustNotDo, 'Anything that requires paid services, real auth, billing, API keys, or production data.')}
 
 ## Assumptions
-${list(spec.assumptions, 'No extra assumptions beyond the confirmed spec.')}
+${assumptionList(spec)}
+
+## Tradeoffs
+${tradeoffs(spec)}
 
 ## Next Steps
 - Wire the local interview engine to a server-side LLM adapter when ready.
@@ -142,6 +169,16 @@ ${list(spec.dataToTrack, 'Start with a local spec object and add entities after 
 - User requests login after previously excluding it.
 - User asks for a spreadsheet instead of a product UI.
 - Required paid integration is unavailable locally.
+
+## Assumptions And Tradeoffs
+${assumptionList(spec)}
+
+${tradeoffs(spec)}
+
+## Future Version Ideas
+- Add real persistence after the local workflow is accepted.
+- Add authenticated ownership only when user roles are confirmed.
+- Add integrations after failure behavior and recovery paths are specified.
 
 ## Testing Checklist
 - Start the flow from an empty state.
