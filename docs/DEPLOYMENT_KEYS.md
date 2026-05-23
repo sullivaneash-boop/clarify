@@ -29,6 +29,8 @@ VITE_SUPABASE_URL=https://bjtfnlvceaopvgoovflm.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
+Use the Supabase anon/public key or publishable key for `VITE_SUPABASE_ANON_KEY`. Do not use the `service_role` key or any Supabase secret key here; Vite exposes `VITE_` variables to the browser.
+
 The app only calls the deployed `interview-turn` Edge Function when both values are present. If either is missing, Clarify uses the local deterministic stub provider.
 
 Do not add `VITE_GEMINI_API_KEY`.
@@ -63,7 +65,7 @@ VITE_SUPABASE_URL=https://bjtfnlvceaopvgoovflm.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-Do not add `GEMINI_API_KEY` to Vercel for this frontend project. Gemini should be set on Supabase Edge Function secrets only.
+Do not add `GEMINI_API_KEY`, a Supabase `service_role` key, or any Supabase secret key to Vercel for this frontend project. Gemini should be set on Supabase Edge Function secrets only.
 
 Recommended Vercel settings:
 

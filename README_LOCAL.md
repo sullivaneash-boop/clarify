@@ -85,6 +85,8 @@ Provider behavior:
 
 The connected Supabase project is `https://bjtfnlvceaopvgoovflm.supabase.co`, and the deployed function is available at `https://bjtfnlvceaopvgoovflm.supabase.co/functions/v1/interview-turn` with JWT verification enabled.
 
+For `VITE_SUPABASE_ANON_KEY`, use the Supabase anon/public key or publishable key only. Do not use `service_role`, `sb_secret_`, or any other Supabase secret key in Vercel or browser-facing env vars.
+
 Manual stub test:
 
 1. Ensure `LLM_PROVIDER=stub` or leave Supabase env vars empty.

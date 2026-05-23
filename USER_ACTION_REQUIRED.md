@@ -16,6 +16,8 @@ The Supabase project is connected and ready:
 
 To call the Supabase `interview-turn` Edge Function from the browser, add the Supabase anon key to `.env.local` as `VITE_SUPABASE_ANON_KEY`. The Supabase project URL has been set to `https://bjtfnlvceaopvgoovflm.supabase.co`.
 
+Use the Supabase anon/public key or publishable key. Do not use the `service_role` key or a Supabase secret key in Vercel or any `VITE_` variable.
+
 Run `npm run env:check` after adding keys.
 
 ## Optional user action
@@ -78,7 +80,7 @@ VITE_SUPABASE_URL=https://bjtfnlvceaopvgoovflm.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-Do not add `GEMINI_API_KEY` to Vercel. Gemini belongs in Supabase secrets only.
+Do not add `GEMINI_API_KEY`, the Supabase `service_role` key, or any Supabase secret key to Vercel. Gemini belongs in Supabase secrets only.
 
 Recommended Vercel settings:
 
