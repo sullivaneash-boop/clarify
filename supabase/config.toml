@@ -1,0 +1,4 @@
+project_id = "bjtfnlvceaopvgoovflm"
+
+[functions.interview-turn]
+verify_jwt = true
