@@ -145,7 +145,7 @@ Frontend behavior:
 Manual provider test:
 
 - Stub: send `I need a client portal for my detailing business where customers can request services.` Expect a structured patch and a question for missing output type or remaining required detail.
-- DeepSeek: set Supabase secrets `LLM_PROVIDER=deepseek`, `DEEPSEEK_MODEL=deepseek-v4-flash`, and `DEEPSEEK_API_KEY`, then repeat the same message. Expect valid JSON output and no browser-visible DeepSeek key.
+- DeepSeek: set Supabase secrets `LLM_PROVIDER=deepseek`, `DEEPSEEK_MODEL=deepseek-v4-pro`, and `DEEPSEEK_API_KEY`, then repeat the same message. Expect valid JSON output and no browser-visible DeepSeek key.
 
 ## Known Limitations
 

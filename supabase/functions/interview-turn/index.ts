@@ -680,7 +680,7 @@ function resolveProvider(): Provider {
   if (providerName === 'deepseek') {
     return new DeepSeekProvider(
       Deno.env.get('DEEPSEEK_API_KEY') ?? '',
-      Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-chat',
+      Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-v4-pro',
     );
   }
   if (providerName === 'gemini') {

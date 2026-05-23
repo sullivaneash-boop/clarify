@@ -45,7 +45,7 @@ For server stub testing:
 
 ```bash
 supabase secrets set LLM_PROVIDER=stub
-supabase secrets set DEEPSEEK_MODEL=deepseek-v4-flash
+supabase secrets set DEEPSEEK_MODEL=deepseek-v4-pro
 ```
 
 When ready to test DeepSeek:
@@ -53,7 +53,7 @@ When ready to test DeepSeek:
 ```bash
 supabase secrets set LLM_PROVIDER=deepseek
 supabase secrets set DEEPSEEK_API_KEY=your_deepseek_key
-supabase secrets set DEEPSEEK_MODEL=deepseek-v4-flash
+supabase secrets set DEEPSEEK_MODEL=deepseek-v4-pro
 ```
 
 The project ref is configured in `supabase/config.toml` as `bjtfnlvceaopvgoovflm`.

@@ -6,6 +6,7 @@ type CallDeepSeekJsonOptions<T> = {
   prompt: string;
   schema: z.ZodType<T>;
   operationName: string;
+  reasoningEffort?: 'high' | 'max';
 };
 
 const deepSeekResponseSchema = z.object({
@@ -14,6 +15,7 @@ const deepSeekResponseSchema = z.object({
       z.object({
         message: z.object({
           content: z.string().nullable(),
+          reasoning_content: z.string().nullable().optional(),
         }),
       }),
     )
@@ -46,6 +48,7 @@ export async function callDeepSeekJson<T>({
   prompt,
   schema,
   operationName,
+  reasoningEffort = 'high',
 }: CallDeepSeekJsonOptions<T>): Promise<T> {
   let lastError: unknown;
 
@@ -70,10 +73,10 @@ export async function callDeepSeekJson<T>({
             },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.2,
+          reasoning_effort: reasoningEffort,
           max_tokens: 1200,
           stream: false,
-          thinking: { type: 'disabled' },
+          thinking: { type: 'enabled' },
         }),
       });
 

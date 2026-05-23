@@ -24,6 +24,7 @@ import { buildInterviewContextPacket, buildOrchestrationPrompt } from '../interv
 type DeepSeekProviderOptions = {
   apiKey: string;
   model?: string;
+  reasoningEffort?: 'high' | 'max';
   fetchImpl?: typeof fetch;
 };
 
@@ -33,6 +34,7 @@ type CallDeepSeekJsonOptions<T> = {
   prompt: string;
   schema: z.ZodType<T>;
   operationName: string;
+  reasoningEffort?: 'high' | 'max';
   fetchImpl?: typeof fetch;
 };
 
@@ -42,6 +44,7 @@ const deepSeekResponseSchema = z.object({
       z.object({
         message: z.object({
           content: z.string().nullable(),
+          reasoning_content: z.string().nullable().optional(),
         }),
       }),
     )
@@ -74,6 +77,7 @@ export async function callDeepSeekJson<T>({
   prompt,
   schema,
   operationName,
+  reasoningEffort = 'high',
   fetchImpl = fetch,
 }: CallDeepSeekJsonOptions<T>): Promise<T> {
   let lastError: unknown;
@@ -99,10 +103,10 @@ export async function callDeepSeekJson<T>({
             },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.2,
+          reasoning_effort: reasoningEffort,
           max_tokens: 1200,
           stream: false,
-          thinking: { type: 'disabled' },
+          thinking: { type: 'enabled' },
         }),
       });
 
@@ -132,15 +136,17 @@ export class DeepSeekLLMProvider implements LLMProvider {
 
   private apiKey: string;
   private model: string;
+  private reasoningEffort: 'high' | 'max';
   private fetchImpl?: typeof fetch;
 
-  constructor({ apiKey, model = 'deepseek-v4-flash', fetchImpl }: DeepSeekProviderOptions) {
+  constructor({ apiKey, model = 'deepseek-v4-pro', reasoningEffort = 'high', fetchImpl }: DeepSeekProviderOptions) {
     if (!apiKey) {
       throw new Error('DEEPSEEK_API_KEY is required when LLM_PROVIDER=deepseek.');
     }
 
     this.apiKey = apiKey;
     this.model = model;
+    this.reasoningEffort = reasoningEffort;
     this.fetchImpl = fetchImpl;
   }
 
@@ -151,6 +157,7 @@ export class DeepSeekLLMProvider implements LLMProvider {
       prompt: buildExtractSpecUpdatesPrompt(input),
       schema: llmSpecPatchSchema,
       operationName: 'extractSpecUpdates',
+      reasoningEffort: this.reasoningEffort,
       fetchImpl: this.fetchImpl,
     });
   }
@@ -162,6 +169,7 @@ export class DeepSeekLLMProvider implements LLMProvider {
       prompt: buildNextQuestionPrompt(input),
       schema: nextQuestionResponseSchema,
       operationName: 'proposeNextQuestion',
+      reasoningEffort: this.reasoningEffort,
       fetchImpl: this.fetchImpl,
     });
   }
@@ -173,6 +181,7 @@ export class DeepSeekLLMProvider implements LLMProvider {
       prompt: buildReadinessSummaryPrompt(input),
       schema: readinessSummaryResponseSchema,
       operationName: 'summarizeReadiness',
+      reasoningEffort: this.reasoningEffort,
       fetchImpl: this.fetchImpl,
     });
   }
@@ -185,6 +194,7 @@ export class DeepSeekLLMProvider implements LLMProvider {
       prompt: buildOrchestrationPrompt(packet),
       schema: orchestratedInterviewTurnSchema,
       operationName: 'orchestrateInterviewTurn',
+      reasoningEffort: this.reasoningEffort,
       fetchImpl: this.fetchImpl,
     });
   }

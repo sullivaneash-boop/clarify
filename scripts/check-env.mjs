@@ -101,11 +101,11 @@ const checks = [
   },
   {
     label: 'DEEPSEEK_MODEL',
-    ok: providerName !== 'deepseek' || env.DEEPSEEK_MODEL === 'deepseek-v4-flash',
+    ok: providerName !== 'deepseek' || env.DEEPSEEK_MODEL === 'deepseek-v4-pro',
     detail: env.DEEPSEEK_MODEL
       ? env.DEEPSEEK_MODEL
       : providerName === 'deepseek'
-        ? 'missing; default should be deepseek-v4-flash'
+        ? 'missing; default should be deepseek-v4-pro'
         : 'not required unless LLM_PROVIDER=deepseek',
   },
   {
