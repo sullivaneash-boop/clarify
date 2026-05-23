@@ -6,6 +6,20 @@ This project is ready for three modes:
 - Supabase Edge Function with stub provider: browser calls Supabase, but no Gemini key is used.
 - Supabase Edge Function with Gemini: browser calls Supabase, Supabase calls Gemini server-side.
 
+## Current Supabase Status
+
+The Supabase project is connected and the interview Edge Function is already deployed.
+
+```text
+Project URL: https://bjtfnlvceaopvgoovflm.supabase.co
+Function URL: https://bjtfnlvceaopvgoovflm.supabase.co/functions/v1/interview-turn
+Function name: interview-turn
+Status: ACTIVE
+JWT verification: enabled
+```
+
+You only need to add the frontend anon key and, when ready for Gemini testing, the server-side Supabase secrets below.
+
 ## Local `.env.local`
 
 `.env.local` is ignored by git. Put browser-safe values here:
@@ -21,7 +35,9 @@ Do not add `VITE_GEMINI_API_KEY`.
 
 ## Supabase Secrets
 
-Set server-side provider secrets with the Supabase CLI:
+Set server-side provider secrets in Supabase Dashboard under Project Settings -> Edge Functions -> Secrets, or with the Supabase CLI.
+
+For server stub testing:
 
 ```bash
 supabase secrets set LLM_PROVIDER=stub
@@ -34,12 +50,6 @@ When ready to test Gemini:
 supabase secrets set LLM_PROVIDER=gemini
 supabase secrets set GEMINI_API_KEY=your_gemini_key
 supabase secrets set GEMINI_MODEL=gemini-2.5-flash
-```
-
-Deploy the Edge Function:
-
-```bash
-supabase functions deploy interview-turn
 ```
 
 The project ref is configured in `supabase/config.toml` as `bjtfnlvceaopvgoovflm`.

@@ -1,12 +1,18 @@
 # USER ACTION REQUIRED
 
-Date/time: 2026-05-22 22:12:52 EDT
-
 ## Required user action
 
 No user action is required to run or test the local prototype, local onboarding flow, or local stub interview provider.
 
 The interview flow defaults to the deterministic stub provider when Supabase Edge Function settings are not configured.
+
+The Supabase project is connected and ready:
+
+- Project URL: `https://bjtfnlvceaopvgoovflm.supabase.co`
+- Edge Function: `interview-turn`
+- Function URL: `https://bjtfnlvceaopvgoovflm.supabase.co/functions/v1/interview-turn`
+- Status: deployed and `ACTIVE`
+- JWT verification: enabled
 
 To call the Supabase `interview-turn` Edge Function from the browser, add the Supabase anon key to `.env.local` as `VITE_SUPABASE_ANON_KEY`. The Supabase project URL has been set to `https://bjtfnlvceaopvgoovflm.supabase.co`.
 
@@ -32,7 +38,15 @@ Run `npm run env:check` after adding keys.
 To test the real Gemini provider later:
 
 1. Create a Gemini API key in Google AI Studio.
-2. Set Supabase Edge Function secrets:
+2. In Supabase Dashboard, open Project Settings -> Edge Functions -> Secrets and add:
+
+```text
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-2.5-flash
+LLM_PROVIDER=gemini
+```
+
+Or set the same Supabase Edge Function secrets with the Supabase CLI:
 
 ```bash
 supabase secrets set GEMINI_API_KEY=your_key_here
@@ -43,7 +57,7 @@ supabase secrets set LLM_PROVIDER=gemini
 3. Set the browser-safe frontend variables locally or in your deployment environment:
 
 ```bash
-VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_URL=https://bjtfnlvceaopvgoovflm.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 

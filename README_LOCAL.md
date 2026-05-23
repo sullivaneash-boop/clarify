@@ -83,6 +83,8 @@ Provider behavior:
 
 `GEMINI_API_KEY` must only be set as a server-side Supabase secret. Never expose it with a `VITE_` prefix.
 
+The connected Supabase project is `https://bjtfnlvceaopvgoovflm.supabase.co`, and the deployed function is available at `https://bjtfnlvceaopvgoovflm.supabase.co/functions/v1/interview-turn` with JWT verification enabled.
+
 Manual stub test:
 
 1. Ensure `LLM_PROVIDER=stub` or leave Supabase env vars empty.
