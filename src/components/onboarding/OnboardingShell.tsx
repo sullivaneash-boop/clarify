@@ -36,8 +36,8 @@ export function OnboardingShell() {
   }, [back, currentStep]);
 
   return (
-    <div className="min-h-screen bg-bg text-text">
-      <header className="border-b border-border bg-bg">
+    <div className="premium-onboarding-bg min-h-screen text-text">
+      <header className="border-b border-border/80 bg-bg/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <LogoMark />
@@ -50,7 +50,12 @@ export function OnboardingShell() {
         </div>
       </header>
 
-      <main className="px-4 sm:px-6">
+      <main className="relative px-4 sm:px-6">
+        <div className="pointer-events-none absolute inset-0 -z-10">
+          <div className="premium-noise absolute inset-0 opacity-[0.2]" />
+          <div className="absolute left-0 top-0 h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle,rgba(216,138,82,0.18)_0%,rgba(216,138,82,0)_72%)] blur-3xl" />
+          <div className="absolute bottom-0 right-0 h-[380px] w-[380px] rounded-full bg-[radial-gradient(circle,rgba(141,157,196,0.16)_0%,rgba(141,157,196,0)_70%)] blur-3xl" />
+        </div>
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 pt-5">
           <OnboardingProgress currentStep={currentStep} />
         </div>

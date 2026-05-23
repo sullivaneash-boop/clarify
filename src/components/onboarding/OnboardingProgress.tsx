@@ -20,16 +20,16 @@ export function OnboardingProgress({ currentStep }: OnboardingProgressProps) {
         <li key={step.id} className="flex items-center gap-2">
           <span
             className={cn(
-              'flex h-7 min-w-7 items-center justify-center rounded-lg border px-2 text-xs font-medium transition',
+              'flex h-8 min-w-8 items-center justify-center rounded-lg border px-2 text-xs font-medium transition',
               index <= currentIndex
-                ? 'border-accent-muted bg-accent-muted/20 text-accent-strong'
-                : 'border-border bg-surface-inset text-text-subtle',
+                ? 'border-accent-muted bg-accent-muted/15 text-accent-strong shadow-[0_0_0_1px_rgba(216,138,82,0.16)]'
+                : 'border-border bg-surface/70 text-text-subtle',
             )}
             aria-current={step.id === currentStep ? 'step' : undefined}
           >
             {step.label}
           </span>
-          {index < steps.length - 1 ? <span className="h-px w-5 bg-border" aria-hidden="true" /> : null}
+          {index < steps.length - 1 ? <span className="h-px w-5 bg-border/80" aria-hidden="true" /> : null}
         </li>
       ))}
     </ol>
